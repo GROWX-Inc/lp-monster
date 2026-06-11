@@ -1,35 +1,67 @@
-/* モード「runner」:縦スクロール群衆ランナー風(自動走行+2択ゲート)。
-   デザインモチーフ:宇宙×アメリカンポップ。
-   宇宙飛行士の群れが宇宙ハイウェイを自動で走り、
-   - 選択肢がちょうど2個の単一選択 → 左右2枚のゲートをタップして回答
-   - それ以外(3択以上・複数選択・自由記述) → 回答ウィンドウ(モーダル)
-   回答するとエイリアン集団とのバトルに勝利し、仲間=攻撃力⚡が増える */
+/* モード「runner」v2:操作型シューティング(宇宙×アメリカンポップ)。
+   - 主人公は自動で奥へ前進(擬似3D)し、自動で弾を撃ち続ける
+   - プレイヤーは画面ドラッグで主人公を左右に移動
+   - 左右2枚のゲート(障害物)の正面側に弾が当たり、壊すと完全ポーズ
+     → カード形式の回答UI(全質問タイプ統一)→ 回答で「GO!!」再開
+   - ゲーム描画はcanvas(毎コマ描き直す高速方式)。60fps目標。
+     HUD・カードUI・バナーはHTMLのまま(文字表示の品質のため)*/
 
 (function () {
   'use strict';
 
-  var RUN_MS = 2000;      // 次のイベントまで走る時間(ミリ秒)
-  var POWER_START = 5;    // 最初の攻撃力(=仲間の数)
-  var POWER_GAIN = 3;     // 1問回答ごとに増える攻撃力
-  var MAX_UNITS = 30;     // 画面に表示する仲間の上限(性能対策)
-
   var $ = window.AIM_CORE.$;
+
+  /* ゲームの手ざわりを決める数値(実機確認後に調整する想定) */
+  var WORLD_SPEED = 14;     // 前進速度
+  var GATE_DIST = 42;       // ゲートが出現する距離
+  var STOP_Z = 6;           // ゲートが目の前で止まる距離(ゲームオーバーなし)
+  var BULLET_SPEED = 46;    // 弾の速度
+  var FIRE_BASE_MS = 260;   // 連射間隔(⚡が上がるほど短くなる)
+  var FIRE_MIN_MS = 140;
+  var GATE_SECONDS = 6;     // 1ゲートを壊す目安秒数(5〜10秒に収める。要実機調整)
+  var FOCAL = 10;           // 擬似3Dの遠近の強さ
+  var HERO_RANGE = 0.72;    // 主人公が左右に動ける範囲(道幅に対する割合)
 
   window.AIM_MODES = window.AIM_MODES || {};
   window.AIM_MODES.runner = {
     start: function (config) { new Runner(config).start(); }
   };
 
+  function cssVar(name, fallback) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
   function Runner(config) {
     this.config = config;
-    this.idx = 0;          // いま何問目か
-    this.answers = {};     // 回答の記録
-    this.power = POWER_START;
-    this.units = [];       // 画面上の仲間
+    this.idx = 0;            // いま何問目か
+    this.answers = {};       // 回答の記録
+    this.level = 1;          // ⚡攻撃レベル(回答ごとに上がる=連射が速くなる)
+    this.state = 'idle';     // run / exploding / paused / done
+    this.traveled = 0;       // 進んだ距離
+    this.speed = WORLD_SPEED;
+    this.fx = 0;             // 主人公の左右位置(-1〜1。0が道の中央)
+    this.bullets = [];
+    this.gates = null;       // 迫ってくる左右ゲート(なければnull)
+    this.particles = [];
+    this.stars = [];
+    this.shake = 0;          // 画面振動の強さ
+    this.flash = 0;          // 破壊時の白フラッシュ
+    this.fireTimer = 0;
+    this.spawnAt = 0;        // 次のゲートを出す距離
+    this.lastTs = 0;
+    this.dragging = false;
+    this.dragX = 0;
   }
+
+  /* ---------- 起動・画面 ---------- */
 
   Runner.prototype.start = function () {
     var self = this;
+    this.colors = {
+      main: cssVar('--main', '#5a3fd6'),
+      accent: cssVar('--accent', '#ff5fa2')
+    };
     this.buildHud();
     window.AIM_CORE.buildTitle(this.config, function () { self.enterGame(); });
   };
@@ -46,7 +78,7 @@
 
   Runner.prototype.updateHud = function () {
     $('#hud-count').textContent = this.idx + ' / ' + this.config.questions.length;
-    $('#hud-power').textContent = '⚡' + this.power;
+    $('#hud-power').textContent = '⚡' + this.level;
     var icons = $('#hud-icons').children;
     for (var i = 0; i < icons.length; i++) {
       if (i < this.idx && icons[i].className !== 'done') {
@@ -61,150 +93,475 @@
     $('#screen-runner').hidden = false;
     $('#hud').hidden = false;
     $('#hud-power').hidden = false;
-    this.addUnits(POWER_START);
-    this.scheduleNext();
-  };
-
-  Runner.prototype.scheduleNext = function () {
+    this.initCanvas();
+    this.bindInput();
+    this.spawnAt = this.traveled + 14;
+    this.state = 'run';
+    window.AIM_CORE.showBanner('ドラッグで いどう!ゲートを うちこわせ!');
     var self = this;
-    setTimeout(function () { self.presentQuestion(); }, RUN_MS);
-  };
-
-  /* 仲間(宇宙飛行士)を群れに追加。表示はMAX_UNITSまで、数は⚡で管理 */
-  Runner.prototype.addUnits = function (n) {
-    var crowd = $('#crowd');
-    for (var i = 0; i < n && this.units.length < MAX_UNITS; i++) {
-      var u = document.createElement('span');
-      u.className = 'unit';
-      u.textContent = '🧑‍🚀';
-      var k = this.units.length;
-      var col = k % 5;
-      var row = Math.floor(k / 5);
-      u.style.left = (col * 30 + (row % 2) * 13 + (Math.random() * 8 - 4)) + 'px';
-      u.style.bottom = (row * 20 + (Math.random() * 6 - 3)) + 'px';
-      u.style.animationDelay = (Math.random() * 0.5) + 's';
-      crowd.appendChild(u);
-      this.units.push(u);
-    }
-  };
-
-  Runner.prototype.presentQuestion = function () {
-    var q = this.config.questions[this.idx];
-    var self = this;
-    if (q.type === 'single' && (q.options || []).length === 2) {
-      this.showGates(q);
-    } else {
-      window.AIM_CORE.showBanner('エイリアンの たいぐんが みちを ふさいだ!');
-      setTimeout(function () {
-        window.AIM_QUESTIONS.open(q, self.idx + 1, self.config.questions.length, function (value) {
-          self.onAnswer(q, value);
-        });
-      }, 800);
-    }
-  };
-
-  /* 2択ゲート:タップしたゲートをくぐる=回答 */
-  Runner.prototype.showGates = function (q) {
-    var self = this;
-    var gates = $('#gates');
-    gates.innerHTML = '';
-    var label = document.createElement('p');
-    label.className = 'gate-question';
-    label.textContent = q.text;
-    gates.appendChild(label);
-    var row = document.createElement('div');
-    row.className = 'gate-row';
-    q.options.forEach(function (opt, i) {
-      var b = document.createElement('button');
-      b.className = 'gate ' + (i === 0 ? 'gate-l' : 'gate-r');
-      b.textContent = opt;
-      b.addEventListener('click', function () {
-        gates.hidden = true;
-        self.onAnswer(q, opt);
-      });
-      row.appendChild(b);
+    this.lastTs = performance.now();
+    requestAnimationFrame(function loop(ts) {
+      self.frame(ts);
+      if (self.state !== 'done') requestAnimationFrame(loop);
     });
-    gates.appendChild(row);
-    gates.hidden = false;
-    window.AIM_CORE.showBanner('ゲートが せまってきた!どっちを えらぶ?');
+    window.__aimRunner = this; // 動作確認用(本番動作には影響しない)
+  };
+
+  Runner.prototype.initCanvas = function () {
+    this.canvas = $('#game-canvas');
+    this.ctx = this.canvas.getContext('2d');
+    var self = this;
+    function resize() {
+      var rect = self.canvas.parentElement.getBoundingClientRect();
+      var dpr = Math.min(2, window.devicePixelRatio || 1); // 高精細画面でもぼやけない範囲で軽量に
+      self.w = Math.round(rect.width);
+      self.h = Math.round(rect.height);
+      self.canvas.width = self.w * dpr;
+      self.canvas.height = self.h * dpr;
+      self.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      self.horizonY = self.h * 0.32;
+      self.heroY = self.h - 120;
+      self.roadHalf = self.w * 0.42;
+      self.makeStars();
+    }
+    resize();
+    window.addEventListener('resize', resize);
+  };
+
+  Runner.prototype.makeStars = function () {
+    this.stars = [];
+    var n = Math.min(60, Math.round(this.w * this.h / 4200)); // 端末性能対策で数を抑える
+    for (var i = 0; i < n; i++) {
+      this.stars.push({
+        x: Math.random() * this.w,
+        y: Math.random() * this.h * 0.85,
+        r: Math.random() * 1.6 + 0.6,
+        ph: Math.random() * Math.PI * 2
+      });
+    }
+  };
+
+  /* ドラッグ操作(指の動いた量に合わせた相対移動。スクロール競合対策込み) */
+  Runner.prototype.bindInput = function () {
+    var self = this;
+    var c = this.canvas;
+    c.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      self.dragging = true;
+      self.dragX = e.clientX;
+      if (c.setPointerCapture) c.setPointerCapture(e.pointerId);
+    });
+    c.addEventListener('pointermove', function (e) {
+      if (!self.dragging) return;
+      e.preventDefault();
+      var dx = e.clientX - self.dragX;
+      self.dragX = e.clientX;
+      self.fx += dx / self.roadHalf;
+      if (self.fx > HERO_RANGE) self.fx = HERO_RANGE;
+      if (self.fx < -HERO_RANGE) self.fx = -HERO_RANGE;
+    });
+    function end() { self.dragging = false; }
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+  };
+
+  /* ---------- ゲーム進行 ---------- */
+
+  Runner.prototype.fireInterval = function () {
+    return Math.max(FIRE_MIN_MS, FIRE_BASE_MS - (this.level - 1) * 22);
+  };
+
+  Runner.prototype.frame = function (ts) {
+    var dt = Math.min(0.05, (ts - this.lastTs) / 1000);
+    this.lastTs = ts;
+    if (this.state === 'run') this.update(dt);
+    if (this.state === 'run' || this.state === 'exploding') this.updateFx(dt);
+    this.draw(ts / 1000);
+  };
+
+  Runner.prototype.update = function (dt) {
+    // ゲートが目の前まで来たら減速して止まる(撃ち続ければ必ず壊せる)
+    var targetSpeed = WORLD_SPEED;
+    if (this.gates) {
+      var minZ = Math.min(this.gates[0].worldZ, this.gates[1].worldZ) - this.traveled;
+      if (minZ < STOP_Z + 4) targetSpeed = 0;
+    }
+    this.speed += (targetSpeed - this.speed) * Math.min(1, dt * 5);
+    this.traveled += this.speed * dt;
+
+    // ゲート出現
+    if (!this.gates && this.traveled >= this.spawnAt) this.spawnGates();
+
+    // 自動射撃
+    this.fireTimer -= dt * 1000;
+    if (this.fireTimer <= 0) {
+      this.fireTimer = this.fireInterval();
+      this.bullets.push({ z: 1.5, fx: this.fx });
+    }
+
+    // 弾の前進と命中判定(主人公の正面=同じ側のゲートにだけ当たる)
+    for (var i = this.bullets.length - 1; i >= 0; i--) {
+      var b = this.bullets[i];
+      b.z += BULLET_SPEED * dt;
+      var hit = false;
+      if (this.gates) {
+        var g = b.fx < 0 ? this.gates[0] : this.gates[1];
+        var gz = g.worldZ - this.traveled;
+        if (b.z >= gz - 0.5 && g.hp > 0) {
+          g.hp--;
+          hit = true;
+          this.spark(g);
+          if (g.hp <= 0) this.destroyGate(g);
+        }
+      }
+      if (hit || b.z > 60) this.bullets.splice(i, 1);
+    }
+  };
+
+  Runner.prototype.updateFx = function (dt) {
+    for (var i = this.particles.length - 1; i >= 0; i--) {
+      var p = this.particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 420 * dt;
+      p.rot += p.vr * dt;
+      p.life -= dt;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+    this.shake = Math.max(0, this.shake - dt * 2.2);
+    this.flash = Math.max(0, this.flash - dt * 2.5);
+  };
+
+  Runner.prototype.spawnGates = function () {
+    var isBoss = this.idx === this.config.questions.length - 1;
+    var hp = Math.round(GATE_SECONDS * 1000 / this.fireInterval());
+    this.gates = [
+      { side: -1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', boss: isBoss },
+      { side: 1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', boss: isBoss }
+    ];
+    window.AIM_CORE.showBanner(isBoss ? 'ボスゲートだ!うちこわせ!' : 'ゲートが せまってきた!');
+  };
+
+  /* 命中の火花 */
+  Runner.prototype.spark = function (gate) {
+    var pos = this.gateCenter(gate);
+    for (var i = 0; i < 3; i++) {
+      this.particles.push({
+        x: pos.x + (Math.random() * 30 - 15), y: pos.y + (Math.random() * 20 - 10),
+        vx: Math.random() * 160 - 80, vy: -Math.random() * 120,
+        rot: Math.random() * 6, vr: Math.random() * 10 - 5,
+        size: 4, life: 0.3, color: '#ffe14d'
+      });
+    }
+  };
+
+  /* 破壊演出(パーティクル+画面振動+フラッシュ)→ 完全ポーズ → カードUI */
+  Runner.prototype.destroyGate = function (gate) {
+    var pos = this.gateCenter(gate);
+    var colors = ['#ffe14d', '#62e0ff', this.colors.accent, '#ffffff', this.colors.main];
+    for (var i = 0; i < 42; i++) {
+      var ang = Math.random() * Math.PI * 2;
+      var sp = Math.random() * 380 + 80;
+      this.particles.push({
+        x: pos.x, y: pos.y,
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 140,
+        rot: Math.random() * 6, vr: Math.random() * 16 - 8,
+        size: Math.random() * 8 + 4, life: Math.random() * 0.5 + 0.45,
+        color: colors[i % colors.length]
+      });
+    }
+    this.shake = 1;
+    this.flash = 1;
+    this.gates = null;
+    this.bullets = [];
+    this.state = 'exploding';
+    var self = this;
+    setTimeout(function () {
+      self.state = 'paused'; // 完全ポーズ(回答するまで再開しない)
+      self.openCards(self.config.questions[self.idx]);
+    }, 700);
+  };
+
+  /* ---------- カード回答UI(全質問タイプ統一・世界観デザイン) ---------- */
+
+  Runner.prototype.openCards = function (q) {
+    var self = this;
+    var wrap = $('#cards');
+    wrap.innerHTML = '';
+    var box = document.createElement('div');
+    box.className = 'cards-box';
+
+    var chip = document.createElement('span');
+    chip.className = 'cards-chip';
+    chip.textContent = 'Q' + (this.idx + 1) + ' / ' + this.config.questions.length;
+    box.appendChild(chip);
+
+    var text = document.createElement('p');
+    text.className = 'cards-question';
+    text.textContent = q.text;
+    box.appendChild(text);
+
+    function finish(value) { self.onAnswer(q, value); }
+
+    if (q.type === 'multi') {
+      var selected = [];
+      var confirmBtn = makeConfirm();
+      (q.options || []).forEach(function (opt) {
+        var card = makeCard(opt);
+        card.addEventListener('click', function () {
+          var i = selected.indexOf(opt);
+          if (i >= 0) { selected.splice(i, 1); card.classList.remove('picked'); }
+          else { selected.push(opt); card.classList.add('picked'); }
+          confirmBtn.disabled = selected.length === 0;
+        });
+        box.appendChild(card);
+      });
+      confirmBtn.addEventListener('click', function () { finish(selected.slice()); });
+      box.appendChild(confirmBtn);
+
+    } else if (q.type === 'text') {
+      var ta = document.createElement('textarea');
+      ta.className = 'cards-textarea';
+      ta.rows = 4;
+      ta.placeholder = '自由にご記入ください';
+      var confirmBtn2 = makeConfirm();
+      ta.addEventListener('input', function () {
+        confirmBtn2.disabled = ta.value.trim() === '';
+      });
+      confirmBtn2.addEventListener('click', function () { finish(ta.value.trim()); });
+      box.appendChild(ta);
+      box.appendChild(confirmBtn2);
+
+    } else { // single(選択肢の数は問わない)
+      (q.options || []).forEach(function (opt) {
+        var card = makeCard(opt);
+        card.addEventListener('click', function () {
+          card.classList.add('picked');
+          setTimeout(function () { finish(opt); }, 250); // 選んだ手応えを見せてから確定
+        });
+        box.appendChild(card);
+      });
+    }
+
+    function makeCard(label) {
+      var c = document.createElement('button');
+      c.className = 'answer-card';
+      c.textContent = label;
+      return c;
+    }
+    function makeConfirm() {
+      var b = document.createElement('button');
+      b.className = 'btn-big cards-confirm';
+      b.textContent = 'これで けってい!';
+      b.disabled = true;
+      return b;
+    }
+
+    wrap.appendChild(box);
+    wrap.hidden = false;
   };
 
   Runner.prototype.onAnswer = function (q, value) {
     this.answers[q.id] = value;
-    this.startBattle(q);
-  };
+    this.idx++;
+    this.level++; // ⚡アップ=連射が速くなる
+    this.updateHud();
 
-  /* バトル:数字付きの敵が現れ、群れが突撃 → 数字が0になり勝利 → ⚡が増える */
-  Runner.prototype.startBattle = function (q) {
     var self = this;
-    var isBoss = q.event === 'boss' || this.idx === this.config.questions.length - 1;
-    var foe = $('#foe');
-    foe.innerHTML = '';
-    foe.className = isBoss ? 'boss' : '';
-
-    var body = document.createElement('div');
-    body.className = 'foe-body';
-    if (isBoss) {
-      body.textContent = '🛸';
-    } else {
-      for (var i = 0; i < 6; i++) {
-        var a = document.createElement('span');
-        a.textContent = '👽';
-        body.appendChild(a);
-      }
-    }
-    foe.appendChild(body);
-
-    var foePower = Math.max(1, this.power - 1); // 必ず勝てる数にする(失敗要素なし)
-    var num = document.createElement('div');
-    num.className = 'foe-num';
-    num.textContent = foePower;
-    foe.appendChild(num);
-    foe.hidden = false;
-
-    window.AIM_CORE.showBanner(isBoss ? 'ボスUFOが あらわれた!' : 'エイリアンと バトル!');
-
+    var wrap = $('#cards');
+    wrap.firstChild.classList.add('out'); // カード退場演出
     setTimeout(function () {
-      $('#crowd').classList.add('attack');
-      body.classList.add('foe-hit');
-      /* 敵の数字が0までカウントダウン */
-      var left = foePower;
-      var tick = setInterval(function () {
-        left -= Math.max(1, Math.ceil(foePower / 20));
-        if (left <= 0) {
-          clearInterval(tick);
-          num.textContent = '0';
-          self.winBattle(foe);
-        } else {
-          num.textContent = left;
-        }
-      }, 45);
-    }, 700);
-  };
-
-  Runner.prototype.winBattle = function (foe) {
-    var self = this;
-    /* アメコミ風「POW!」バースト */
-    var pow = document.createElement('div');
-    pow.className = 'pow';
-    pow.textContent = 'POW!';
-    foe.appendChild(pow);
-
-    setTimeout(function () {
-      foe.hidden = true;
-      $('#crowd').classList.remove('attack');
-      self.power += POWER_GAIN;
-      self.addUnits(POWER_GAIN);
-      self.idx++;
-      self.updateHud();
-      window.AIM_CORE.showBanner('やっつけた!なかまが ふえた!⚡+' + POWER_GAIN);
+      wrap.hidden = true;
+      wrap.innerHTML = '';
       if (self.idx >= self.config.questions.length) {
-        setTimeout(function () {
-          window.AIM_CORE.showClear(self.config, 'GAME CLEAR!', self.answers);
-        }, 1200);
+        self.state = 'done';
+        window.AIM_CORE.showClear(self.config, 'GAME CLEAR!', self.answers);
       } else {
-        self.scheduleNext();
+        self.resume();
       }
-    }, 800);
+    }, 350);
   };
+
+  /* 再開演出(GO!!)→ 走行再開 */
+  Runner.prototype.resume = function () {
+    var go = $('#go-burst');
+    go.hidden = false;
+    var self = this;
+    this.lastTs = performance.now();
+    this.state = 'run';
+    this.spawnAt = this.traveled + 18;
+    window.AIM_CORE.showBanner('⚡アップ!れんしゃが はやくなった!');
+    setTimeout(function () { go.hidden = true; }, 750);
+  };
+
+  /* ---------- 描画(canvas) ---------- */
+
+  /* 距離z(奥行き)から画面上の位置と縮尺を計算する(擬似3D) */
+  Runner.prototype.project = function (z) {
+    var s = FOCAL / (FOCAL + Math.max(0, z));
+    return {
+      s: s,
+      y: this.horizonY + (this.heroY - this.horizonY) * s,
+      half: this.roadHalf * s
+    };
+  };
+
+  Runner.prototype.gateCenter = function (gate) {
+    var p = this.project(gate.worldZ - this.traveled);
+    return { x: this.w / 2 + gate.side * p.half * 0.5, y: p.y - 60 * p.s };
+  };
+
+  Runner.prototype.draw = function (t) {
+    var ctx = this.ctx;
+    var w = this.w, h = this.h, cx = w / 2;
+
+    // 背景(宇宙のグラデーション)
+    var bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, '#070b26');
+    bg.addColorStop(0.55, '#1b1450');
+    bg.addColorStop(1, '#45207a');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    // 星(またたき)
+    for (var i = 0; i < this.stars.length; i++) {
+      var st = this.stars[i];
+      ctx.globalAlpha = 0.4 + 0.6 * Math.abs(Math.sin(t * 1.5 + st.ph));
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(st.x, st.y, st.r, st.r);
+    }
+    ctx.globalAlpha = 1;
+
+    // 画面振動
+    ctx.save();
+    if (this.shake > 0) {
+      ctx.translate((Math.random() * 2 - 1) * this.shake * 10, (Math.random() * 2 - 1) * this.shake * 10);
+    }
+
+    // 道(台形)
+    var near = this.project(0), far = this.project(70);
+    ctx.beginPath();
+    ctx.moveTo(cx - near.half, near.y + 60);
+    ctx.lineTo(cx - far.half, far.y);
+    ctx.lineTo(cx + far.half, far.y);
+    ctx.lineTo(cx + near.half, near.y + 60);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(40, 28, 96, .92)';
+    ctx.fill();
+    ctx.strokeStyle = '#62e0ff';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // 中央の破線(走行感)
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    for (var z = 2 + (6 - this.traveled % 6); z < 60; z += 6) {
+      var p1 = this.project(z), p2 = this.project(z + 2.2);
+      ctx.fillRect(cx - 3 * p1.s, p2.y, 6 * p1.s, p1.y - p2.y);
+    }
+
+    // ゲート(奥にあるものから)
+    if (this.gates) {
+      for (var gi = 0; gi < 2; gi++) this.drawGate(this.gates[gi], t);
+    }
+
+    // 弾(ネオン色の光弾)
+    ctx.fillStyle = this.colors.accent;
+    for (var bi = 0; bi < this.bullets.length; bi++) {
+      var b = this.bullets[bi];
+      var bp = this.project(b.z);
+      var bx = cx + b.fx * bp.half;
+      ctx.beginPath();
+      ctx.arc(bx, bp.y - 30 * bp.s, Math.max(2, 5 * bp.s), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 主人公(宇宙飛行士+エンジン光)
+    var hx = cx + this.fx * this.roadHalf;
+    ctx.fillStyle = 'rgba(98, 224, 255, .35)';
+    ctx.beginPath();
+    ctx.ellipse(hx, this.heroY + 16, 22, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '40px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🧑‍🚀', hx, this.heroY - 8 + Math.sin(t * 9) * 2);
+
+    // パーティクル(破片)
+    for (var pi = 0; pi < this.particles.length; pi++) {
+      var pt = this.particles[pi];
+      ctx.save();
+      ctx.translate(pt.x, pt.y);
+      ctx.rotate(pt.rot);
+      ctx.globalAlpha = Math.min(1, pt.life * 2.5);
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(-pt.size / 2, -pt.size / 2, pt.size, pt.size);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // 破壊時の白フラッシュ
+    if (this.flash > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,' + (this.flash * 0.45) + ')';
+      ctx.fillRect(0, 0, w, h);
+    }
+  };
+
+  Runner.prototype.drawGate = function (gate, t) {
+    var ctx = this.ctx;
+    var z = gate.worldZ - this.traveled;
+    var p = this.project(z);
+    var cx = this.w / 2;
+    var gw = p.half * 0.88;
+    var gh = (130 + (gate.boss ? 50 : 0)) * p.s;
+    var gx = cx + gate.side * p.half * 0.5 - gw / 2;
+    var gy = p.y - gh;
+
+    // エネルギーバリア(半透明パネル+ネオン枠)
+    ctx.fillStyle = gate.boss ? 'rgba(255, 90, 90, .25)' : 'rgba(98, 224, 255, .18)';
+    ctx.strokeStyle = gate.boss ? '#ff5fa2' : '#62e0ff';
+    ctx.lineWidth = Math.max(1.5, 4 * p.s);
+    roundRect(ctx, gx, gy, gw, gh, 10 * p.s);
+    ctx.fill();
+    ctx.stroke();
+
+    // コア(エイリアン/ボスUFO)。背景と同化しないよう白い光彩を敷く
+    var coreSize = Math.round((gate.boss ? 56 : 42) * p.s + 8);
+    var coreY = gy + gh / 2 + Math.sin(t * 4 + gate.side) * 4 * p.s;
+    ctx.fillStyle = 'rgba(255, 255, 255, .3)';
+    ctx.beginPath();
+    ctx.arc(gx + gw / 2, coreY, coreSize * 0.62, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = coreSize + 'px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(gate.core, gx + gw / 2, coreY);
+
+    // 耐久値バッジ
+    var label = String(gate.hp);
+    ctx.font = 'bold ' + Math.round(13 * p.s + 8) + 'px sans-serif';
+    var bw = ctx.measureText(label).width + 22 * p.s + 8;
+    var bh = 20 * p.s + 10;
+    var bx = gx + gw / 2 - bw / 2;
+    var by = gy - bh - 6 * p.s;
+    ctx.fillStyle = '#e8403a';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    roundRect(ctx, bx, by, bw, bh, bh / 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, gx + gw / 2, by + bh / 2 + 1);
+  };
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
 })();
