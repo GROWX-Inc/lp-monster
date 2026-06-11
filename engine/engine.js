@@ -63,7 +63,7 @@
       '<p>デモ:</p>' +
       '<ul class="demo-links">' +
       '<li><a href="?config=cafe">飲食店(カフェ)デモ</a></li>' +
-      '<li><a href="?config=salon">美容室デモ</a></li>' +
+      '<li><a href="?config=hotel">ホテルデモ</a></li>' +
       '</ul>';
     guide.hidden = false;
   }
