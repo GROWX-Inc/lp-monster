@@ -1,0 +1,73 @@
+{
+  "brand": {
+    "name": "ホテル グランモンテ(デモ)",
+    "logoUrl": "",
+    "mainColor": "#1F3A5F",
+    "accentColor": "#C9A24B"
+  },
+  "theme": "adventure",
+  "title": {
+    "heading": "アンケートクエスト",
+    "subheading": "ご宿泊の思い出に2〜3分のミニ冒険を!クリアすると特典が…!",
+    "startLabel": "ぼうけんに でる"
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single",
+      "text": "今回のご予約のきっかけを教えてください",
+      "options": ["公式サイト", "予約サイト(OTA)", "旅行会社", "紹介・リピート"],
+      "event": "enemy"
+    },
+    {
+      "id": "q2",
+      "type": "single",
+      "text": "チェックイン時の対応はいかがでしたか?",
+      "options": ["とても良い", "良い", "ふつう", "気になる点があった"],
+      "event": "enemy"
+    },
+    {
+      "id": "q3",
+      "type": "single",
+      "text": "客室の清潔さには満足いただけましたか?",
+      "options": ["とても満足", "満足", "ふつう", "不満"],
+      "event": "chest"
+    },
+    {
+      "id": "q4",
+      "type": "multi",
+      "text": "ご朝食で良かったものを教えてください(複数選べます)",
+      "options": ["和食メニュー", "洋食メニュー", "ドリンク・デザート", "会場の雰囲気", "朝食は利用していない"],
+      "event": "enemy"
+    },
+    {
+      "id": "q5",
+      "type": "single",
+      "text": "また当ホテルに泊まりたいと思いますか?",
+      "options": ["ぜひ泊まりたい", "機会があれば", "わからない"],
+      "event": "chest"
+    },
+    {
+      "id": "q6",
+      "type": "text",
+      "text": "最後のボスが出現!ご意見・ご要望を書いて、とどめの一撃を!",
+      "event": "boss"
+    }
+  ],
+  "clear": {
+    "message": "アンケートへのご協力ありがとうございました!次回ご宿泊時に使える「レイトチェックアウト無料特典」をプレゼント!(デモ用の仮特典です)",
+    "ctaLabel": "とくてんを うけとる",
+    "ctaUrl": "https://example.com/coupon-hotel"
+  },
+  "submit": {
+    "googleFormAction": "https://docs.google.com/forms/d/e/PLACEHOLDER/formResponse",
+    "fieldMap": {
+      "q1": "entry.1111111111",
+      "q2": "entry.2222222222",
+      "q3": "entry.3333333333",
+      "q4": "entry.4444444444",
+      "q5": "entry.5555555555",
+      "q6": "entry.6666666666"
+    }
+  }
+}
