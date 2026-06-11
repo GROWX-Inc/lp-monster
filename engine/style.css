@@ -142,6 +142,32 @@ textarea, input {
   font-size: 30px;
 }
 
+/* 画像テーマ:パララックス背景層(遠景・中景・近景)*/
+#field.image-theme::after { display: none; } /* 地面の帯は近景画像に含めるため消す */
+#field .layer {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  background-position: 0 bottom;
+  transition: background-position-x .4s ease-out;
+  will-change: background-position-x;
+  pointer-events: none;
+}
+
+#hero img, .sprite img {
+  display: block;
+  height: auto;
+  pointer-events: none;
+}
+
+#hud.hud-image {
+  background-color: rgba(0, 0, 0, .55);
+  background-size: cover;
+  background-position: center;
+}
+.hud-icon { width: 20px; height: 20px; vertical-align: middle; }
+
 #hero {
   position: absolute;
   left: 56px;
