@@ -16,11 +16,13 @@
   var GATE_DIST = 42;       // ゲートが出現する距離
   var STOP_Z = 6;           // ゲートが目の前で止まる距離(ゲームオーバーなし)
   var BULLET_SPEED = 46;    // 弾の速度
-  var FIRE_BASE_MS = 260;   // 連射間隔(⚡が上がるほど短くなる)
-  var FIRE_MIN_MS = 140;
-  var GATE_SECONDS = 6;     // 1ゲートを壊す目安秒数(5〜10秒に収める。要実機調整)
+  var FIRE_MS = 240;        // 連射間隔(一定。強さは攻撃倍率で表現)
+  var SEC_FIRST = 6;        // 1問目のゲート破壊目標秒数
+  var SEC_LAST = 2.5;       // 最終問のゲート破壊目標秒数(後半ほどテンポUP)
   var FOCAL = 10;           // 擬似3Dの遠近の強さ
   var HERO_RANGE = 0.72;    // 主人公が左右に動ける範囲(道幅に対する割合)
+  var ITEM_SIDE = 0.42;     // アイテムを置く左右の寄せ幅
+  var ITEM_CATCH = 0.22;    // アイテムを拾える距離(主人公との左右差)
 
   window.AIM_MODES = window.AIM_MODES || {};
   window.AIM_MODES.runner = {
@@ -36,19 +38,21 @@
     this.config = config;
     this.idx = 0;            // いま何問目か
     this.answers = {};       // 回答の記録
-    this.level = 1;          // ⚡攻撃レベル(回答ごとに上がる=連射が速くなる)
+    this.mult = 1;           // 攻撃倍率(アイテム取得・回答で上がる。弾1発のダメージ)
     this.state = 'idle';     // run / exploding / paused / done
     this.traveled = 0;       // 進んだ距離
     this.speed = WORLD_SPEED;
     this.fx = 0;             // 主人公の左右位置(-1〜1。0が道の中央)
     this.bullets = [];
     this.gates = null;       // 迫ってくる左右ゲート(なければnull)
+    this.item = null;        // コース上のパワーアップアイテム(なければnull)
     this.particles = [];
     this.stars = [];
     this.shake = 0;          // 画面振動の強さ
     this.flash = 0;          // 破壊時の白フラッシュ
     this.fireTimer = 0;
     this.spawnAt = 0;        // 次のゲートを出す距離
+    this.itemAt = 0;         // 次のアイテムを出す距離
     this.lastTs = 0;
     this.dragging = false;
     this.dragX = 0;
@@ -78,7 +82,7 @@
 
   Runner.prototype.updateHud = function () {
     $('#hud-count').textContent = this.idx + ' / ' + this.config.questions.length;
-    $('#hud-power').textContent = '⚡' + this.level;
+    $('#hud-power').textContent = '×' + this.mult; // 攻撃倍率を常時表示
     var icons = $('#hud-icons').children;
     for (var i = 0; i < icons.length; i++) {
       if (i < this.idx && icons[i].className !== 'done') {
@@ -95,9 +99,10 @@
     $('#hud-power').hidden = false;
     this.initCanvas();
     this.bindInput();
-    this.spawnAt = this.traveled + 14;
+    this.itemAt = this.traveled + 12;
+    this.spawnAt = this.traveled + 26;
     this.state = 'run';
-    window.AIM_CORE.showBanner('ドラッグで いどう!ゲートを うちこわせ!');
+    window.AIM_CORE.showBanner('ドラッグで いどう!⚡を ひろって ゲートを うちこわせ!');
     var self = this;
     this.lastTs = performance.now();
     requestAnimationFrame(function loop(ts) {
@@ -167,10 +172,6 @@
 
   /* ---------- ゲーム進行 ---------- */
 
-  Runner.prototype.fireInterval = function () {
-    return Math.max(FIRE_MIN_MS, FIRE_BASE_MS - (this.level - 1) * 22);
-  };
-
   Runner.prototype.frame = function (ts) {
     var dt = Math.min(0.05, (ts - this.lastTs) / 1000);
     this.lastTs = ts;
@@ -189,13 +190,30 @@
     this.speed += (targetSpeed - this.speed) * Math.min(1, dt * 5);
     this.traveled += this.speed * dt;
 
+    // アイテム出現(ゲートとゲートの間に1個。左右どちらかに寄せる)
+    if (!this.item && !this.gates && this.traveled >= this.itemAt && this.traveled < this.spawnAt - 8) {
+      this.item = {
+        worldZ: this.traveled + GATE_DIST * 0.6,
+        fx: (Math.random() < 0.5 ? -1 : 1) * ITEM_SIDE
+      };
+    }
+
     // ゲート出現
     if (!this.gates && this.traveled >= this.spawnAt) this.spawnGates();
+
+    // アイテムの接近と取得判定(取り逃してもペナルティなし)
+    if (this.item) {
+      var iz = this.item.worldZ - this.traveled;
+      if (iz <= 1.4) {
+        if (Math.abs(this.fx - this.item.fx) < ITEM_CATCH) this.collectItem();
+        else if (iz < -1) this.item = null; // 通り過ぎた(そのまま消える)
+      }
+    }
 
     // 自動射撃
     this.fireTimer -= dt * 1000;
     if (this.fireTimer <= 0) {
-      this.fireTimer = this.fireInterval();
+      this.fireTimer = FIRE_MS;
       this.bullets.push({ z: 1.5, fx: this.fx });
     }
 
@@ -208,7 +226,7 @@
         var g = b.fx < 0 ? this.gates[0] : this.gates[1];
         var gz = g.worldZ - this.traveled;
         if (b.z >= gz - 0.5 && g.hp > 0) {
-          g.hp--;
+          g.hp -= this.mult; // ダメージ=攻撃倍率
           hit = true;
           this.spark(g);
           if (g.hp <= 0) this.destroyGate(g);
@@ -218,12 +236,35 @@
     }
   };
 
+  /* アイテム取得:攻撃倍率アップ+「×2!」ポップ演出 */
+  Runner.prototype.collectItem = function () {
+    this.item = null;
+    this.mult++;
+    this.updateHud();
+    var hx = this.w / 2 + this.fx * this.roadHalf;
+    this.particles.push({
+      x: hx, y: this.heroY - 70, vx: 0, vy: -70,
+      rot: 0, vr: 0, size: 34, life: 0.9,
+      color: '#ffe14d', text: '×' + this.mult + '!'
+    });
+    for (var i = 0; i < 14; i++) {
+      var ang = Math.random() * Math.PI * 2;
+      var sp = Math.random() * 220 + 60;
+      this.particles.push({
+        x: hx, y: this.heroY - 20,
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 80,
+        rot: Math.random() * 6, vr: Math.random() * 12 - 6,
+        size: Math.random() * 6 + 3, life: 0.5, color: '#ffe14d'
+      });
+    }
+  };
+
   Runner.prototype.updateFx = function (dt) {
     for (var i = this.particles.length - 1; i >= 0; i--) {
       var p = this.particles[i];
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vy += 420 * dt;
+      if (!p.text) p.vy += 420 * dt; // 文字ポップは落下させず浮かせる
       p.rot += p.vr * dt;
       p.life -= dt;
       if (p.life <= 0) this.particles.splice(i, 1);
@@ -234,7 +275,14 @@
 
   Runner.prototype.spawnGates = function () {
     var isBoss = this.idx === this.config.questions.length - 1;
-    var hp = Math.round(GATE_SECONDS * 1000 / this.fireInterval());
+    /* 目標秒数を1問目→最終問で段階的に短縮し、後半ほどテンポを上げる。
+       耐久値=その時点の倍率×目標秒数ぶん(アイテムを拾うと予定より早く壊せる)*/
+    var total = this.config.questions.length;
+    var ratio = total > 1 ? this.idx / (total - 1) : 1;
+    var targetSec = SEC_FIRST + (SEC_LAST - SEC_FIRST) * ratio;
+    var hp = Math.max(3, Math.round(targetSec * (1000 / FIRE_MS) * this.mult));
+    // 出現位置をすでに通り過ぎている弾が遡って当たらないように消しておく
+    this.bullets = this.bullets.filter(function (b) { return b.z < GATE_DIST - 2; });
     this.gates = [
       { side: -1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', boss: isBoss },
       { side: 1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', boss: isBoss }
@@ -273,6 +321,7 @@
     this.shake = 1;
     this.flash = 1;
     this.gates = null;
+    this.item = null;
     this.bullets = [];
     this.state = 'exploding';
     var self = this;
@@ -364,7 +413,7 @@
   Runner.prototype.onAnswer = function (q, value) {
     this.answers[q.id] = value;
     this.idx++;
-    this.level++; // ⚡アップ=連射が速くなる
+    this.mult++; // 回答ボーナス:答える=強くなる
     this.updateHud();
 
     var self = this;
@@ -382,16 +431,17 @@
     }, 350);
   };
 
-  /* 再開演出(GO!!)→ 走行再開 */
+  /* 再開演出(PowerUp! ×○ + GO!!)→ 走行再開 */
   Runner.prototype.resume = function () {
     var go = $('#go-burst');
+    go.innerHTML = 'PowerUp! <span class="go-mult">×' + this.mult + '</span><small>GO!!</small>';
     go.hidden = false;
     var self = this;
     this.lastTs = performance.now();
     this.state = 'run';
-    this.spawnAt = this.traveled + 18;
-    window.AIM_CORE.showBanner('⚡アップ!れんしゃが はやくなった!');
-    setTimeout(function () { go.hidden = true; }, 750);
+    this.itemAt = this.traveled + 12;
+    this.spawnAt = this.traveled + 28;
+    setTimeout(function () { go.hidden = true; }, 850);
   };
 
   /* ---------- 描画(canvas) ---------- */
@@ -459,6 +509,27 @@
       ctx.fillRect(cx - 3 * p1.s, p2.y, 6 * p1.s, p1.y - p2.y);
     }
 
+    // パワーアップアイテム(⚡の光る玉)
+    if (this.item) {
+      var ip = this.project(this.item.worldZ - this.traveled);
+      var ix = cx + this.item.fx * ip.half;
+      var iy = ip.y - 26 * ip.s;
+      var ir = 22 * ip.s + 6;
+      ctx.fillStyle = 'rgba(255, 225, 77, ' + (0.25 + 0.15 * Math.sin(t * 6)) + ')';
+      ctx.beginPath();
+      ctx.arc(ix, iy, ir * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffe14d';
+      ctx.beginPath();
+      ctx.arc(ix, iy, ir, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = Math.round(ir * 1.2) + 'px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#1d1640';
+      ctx.fillText('⚡', ix, iy + 1);
+    }
+
     // ゲート(奥にあるものから)
     if (this.gates) {
       for (var gi = 0; gi < 2; gi++) this.drawGate(this.gates[gi], t);
@@ -486,7 +557,7 @@
     ctx.textBaseline = 'middle';
     ctx.fillText('🧑‍🚀', hx, this.heroY - 8 + Math.sin(t * 9) * 2);
 
-    // パーティクル(破片)
+    // パーティクル(破片・文字ポップ)
     for (var pi = 0; pi < this.particles.length; pi++) {
       var pt = this.particles[pi];
       ctx.save();
@@ -494,7 +565,17 @@
       ctx.rotate(pt.rot);
       ctx.globalAlpha = Math.min(1, pt.life * 2.5);
       ctx.fillStyle = pt.color;
-      ctx.fillRect(-pt.size / 2, -pt.size / 2, pt.size, pt.size);
+      if (pt.text) {
+        ctx.font = '900 italic ' + pt.size + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = '#1d1640';
+        ctx.lineWidth = 4;
+        ctx.strokeText(pt.text, 0, 0);
+        ctx.fillText(pt.text, 0, 0);
+      } else {
+        ctx.fillRect(-pt.size / 2, -pt.size / 2, pt.size, pt.size);
+      }
       ctx.restore();
     }
     ctx.globalAlpha = 1;

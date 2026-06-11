@@ -353,21 +353,30 @@ textarea, input {
 .cards-confirm { margin-top: 4px; }
 .cards-confirm:disabled { opacity: .4; box-shadow: none; cursor: default; }
 
-/* 再開演出「GO!!」 */
+/* 再開演出「PowerUp! ×○ + GO!!」 */
 #go-burst {
   position: absolute;
   top: 42%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 25;
+  width: 100%;
+  text-align: center;
   color: #ffe14d;
-  font-size: 64px;
+  font-size: 38px;
   font-weight: 900;
   font-style: italic;
   letter-spacing: .04em;
   text-shadow: 0 0 24px rgba(255, 225, 77, .8), 0 4px 0 rgba(0, 0, 0, .5);
-  animation: go-pop .7s ease-out;
+  animation: go-pop .85s ease-out;
   pointer-events: none;
+}
+#go-burst .go-mult { font-size: 50px; color: #fff; }
+#go-burst small {
+  display: block;
+  margin-top: 6px;
+  font-size: 56px;
+  font-weight: 900;
 }
 @keyframes go-pop {
   0% { transform: translate(-50%, -50%) scale(.2) rotate(-8deg); opacity: 0; }
