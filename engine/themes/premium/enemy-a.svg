@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <path d="M40 220 Q40 90 128 90 Q216 90 216 220 Z" fill="#4caf7d"/>
+  <circle cx="100" cy="160" r="12" fill="#fff"/><circle cx="156" cy="160" r="12" fill="#fff"/>
+  <circle cx="102" cy="162" r="6" fill="#222"/><circle cx="158" cy="162" r="6" fill="#222"/>
+  <path d="M104 196 Q128 210 152 196" stroke="#222" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <text x="14" y="248" fill="#666" font-size="22" font-family="sans-serif">enemy-a</text>
+</svg>

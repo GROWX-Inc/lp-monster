@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <path d="M128 50 Q190 50 190 130 L190 210 L170 190 L150 210 L128 190 L106 210 L86 190 L66 210 L66 130 Q66 50 128 50 Z" fill="#9b8cf2"/>
+  <circle cx="104" cy="124" r="11" fill="#fff"/><circle cx="152" cy="124" r="11" fill="#fff"/>
+  <circle cx="106" cy="126" r="5" fill="#222"/><circle cx="154" cy="126" r="5" fill="#222"/>
+  <ellipse cx="128" cy="162" rx="10" ry="14" fill="#222"/>
+  <text x="14" y="248" fill="#666" font-size="22" font-family="sans-serif">enemy-b</text>
+</svg>

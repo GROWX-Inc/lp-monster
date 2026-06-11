@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+  <path d="M60 280 Q40 120 160 100 Q280 120 260 280 Z" fill="#b3443f"/>
+  <polygon points="92,118 76,58 124,96" fill="#7e2b27"/>
+  <polygon points="228,118 244,58 196,96" fill="#7e2b27"/>
+  <circle cx="124" cy="180" r="16" fill="#ffd34d"/><circle cx="196" cy="180" r="16" fill="#ffd34d"/>
+  <circle cx="126" cy="182" r="7" fill="#222"/><circle cx="198" cy="182" r="7" fill="#222"/>
+  <path d="M120 232 L136 220 L152 232 L168 220 L184 232 L200 220" stroke="#fff" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <text x="14" y="310" fill="#666" font-size="24" font-family="sans-serif">boss</text>
+</svg>

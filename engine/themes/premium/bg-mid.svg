@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="720" viewBox="0 0 1080 720">
+  <g fill="#16203c">
+    <path d="M0 660 Q120 540 240 660 Z"/>
+    <rect x="300" y="540" width="60" height="120"/>
+    <polygon points="330,480 290,545 370,545"/>
+    <path d="M430 660 Q540 520 650 660 Z"/>
+    <rect x="720" y="560" width="50" height="100"/>
+    <polygon points="745,505 710,565 780,565"/>
+    <path d="M840 660 Q950 560 1060 660 Z"/>
+  </g>
+  <rect y="660" width="1080" height="60" fill="#16203c"/>
+  <text x="20" y="640" fill="#fff" font-size="28" opacity=".5" font-family="sans-serif">bg-mid (placeholder)</text>
+</svg>

@@ -63,6 +63,7 @@ textarea, input {
 #hud-icons { display: flex; gap: 6px; font-size: 20px; }
 #hud-icons .done { opacity: .9; }
 #hud-count { font-weight: bold; font-size: 16px; white-space: nowrap; }
+#hud-power { font-weight: bold; font-size: 16px; color: #ffe14d; white-space: nowrap; }
 
 /* ---------- 画面共通 ---------- */
 
@@ -142,6 +143,32 @@ textarea, input {
   font-size: 30px;
 }
 
+/* 画像テーマ:パララックス背景層(遠景・中景・近景)*/
+#field.image-theme::after { display: none; } /* 地面の帯は近景画像に含めるため消す */
+#field .layer {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  background-position: 0 bottom;
+  transition: background-position-x .4s ease-out;
+  will-change: background-position-x;
+  pointer-events: none;
+}
+
+#hero img, .sprite img {
+  display: block;
+  height: auto;
+  pointer-events: none;
+}
+
+#hud.hud-image {
+  background-color: rgba(0, 0, 0, .55);
+  background-size: cover;
+  background-position: center;
+}
+.hud-icon { width: 20px; height: 20px; vertical-align: middle; }
+
 #hero {
   position: absolute;
   left: 56px;
@@ -215,6 +242,196 @@ textarea, input {
   font-weight: bold;
   white-space: nowrap;
   animation: pop-in .3s ease-out;
+}
+
+/* ---------- [2b] runnerモード(宇宙×アメリカンポップ) ---------- */
+
+#screen-runner {
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(#070b26 0%, #1b1450 55%, #45207a 100%);
+}
+
+/* 星空(点の集まりをCSSでちりばめる) */
+#stars { position: absolute; inset: 0; pointer-events: none; }
+#stars::before, #stars::after {
+  content: "";
+  position: absolute;
+  width: 2px; height: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    30px 40px #fff, 90px 110px #cfe6ff, 150px 60px #fff, 210px 130px #ffe9b0,
+    280px 50px #fff, 340px 90px #cfe6ff, 60px 200px #fff, 130px 250px #ffe9b0,
+    230px 220px #fff, 320px 260px #cfe6ff, 40px 320px #fff, 180px 350px #fff,
+    300px 380px #ffe9b0, 100px 420px #cfe6ff, 250px 450px #fff, 350px 430px #fff;
+  animation: twinkle 2.2s ease-in-out infinite alternate;
+}
+#stars::after {
+  width: 3px; height: 3px;
+  transform: translate(15px, 35px);
+  animation-delay: 1.1s;
+  opacity: .7;
+}
+@keyframes twinkle { from { opacity: .4; } to { opacity: 1; } }
+
+/* 宇宙ハイウェイ(CSSの遠近変形による擬似3D) */
+#road { position: absolute; inset: 0; perspective: 320px; pointer-events: none; }
+#road-surface {
+  position: absolute;
+  left: 50%;
+  bottom: -60px;
+  width: 290px;
+  height: 170%;
+  transform: translateX(-50%) rotateX(58deg);
+  transform-origin: bottom center;
+  background-color: rgba(40, 28, 96, .9);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, .9) 26%, transparent 26%);
+  background-size: 9px 96px;
+  background-repeat: repeat-y;
+  background-position: 50% 0;
+  border-left: 5px solid #62e0ff;
+  border-right: 5px solid #62e0ff;
+  box-shadow: 0 0 24px rgba(98, 224, 255, .5);
+  animation: road-run .55s linear infinite;
+}
+@keyframes road-run {
+  from { background-position-y: 0; }
+  to { background-position-y: 96px; }
+}
+
+/* 仲間の群れ(宇宙飛行士) */
+#crowd {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  width: 150px;
+  height: 130px;
+  margin-left: -75px;
+  z-index: 5;
+  pointer-events: none;
+}
+#crowd .unit {
+  position: absolute;
+  font-size: 24px;
+  line-height: 1;
+  animation: run-bob .45s ease-in-out infinite alternate;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, .5));
+}
+@keyframes run-bob { from { transform: translateY(0); } to { transform: translateY(-9px); } }
+#crowd.attack { animation: lunge .6s ease; }
+@keyframes lunge { 40% { transform: translateY(-60px); } }
+
+/* 2択ゲート */
+#gates {
+  position: absolute;
+  left: 0; right: 0;
+  top: 128px; /* 上部のお知らせバナーと重ならない位置 */
+  padding: 0 14px;
+  z-index: 10;
+}
+.gate-question {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .65);
+  color: #fff;
+  font-size: 15px;
+  font-weight: bold;
+  line-height: 1.5;
+  text-align: center;
+  animation: pop-in .3s ease-out;
+}
+.gate-row { display: flex; gap: 12px; }
+.gate {
+  flex: 1;
+  min-height: 88px;
+  padding: 10px;
+  border: 4px solid #fff;
+  border-radius: 16px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1.4;
+  cursor: pointer;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, .35), 0 0 18px rgba(255, 255, 255, .25);
+  animation: gate-in .5s ease-out;
+}
+.gate:active { transform: translateY(3px); box-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
+.gate-l { background: var(--main); }
+.gate-r { background: var(--accent); }
+@keyframes gate-in {
+  from { transform: scale(.3) translateY(-90px); opacity: 0; }
+}
+
+/* 敵(エイリアン集団・ボスUFO) */
+#foe {
+  position: absolute;
+  left: 50%;
+  top: 150px;
+  transform: translateX(-50%);
+  z-index: 8;
+  width: 190px;
+  text-align: center;
+  animation: pop-in .4s ease-out;
+}
+.foe-body {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  font-size: 34px;
+  line-height: 1.1;
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .5));
+}
+#foe.boss .foe-body {
+  display: block;
+  font-size: 84px;
+  animation: boss-hover 1.2s ease-in-out infinite alternate;
+}
+@keyframes boss-hover { from { transform: translateY(0); } to { transform: translateY(-14px); } }
+.foe-body.foe-hit { animation: foe-shake .12s linear infinite; }
+@keyframes foe-shake {
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+.foe-num {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 16px;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: #e8403a;
+  color: #fff;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+/* アメコミ風「POW!」バースト */
+.pow {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  width: 110px;
+  height: 110px;
+  margin-left: -55px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffe14d;
+  color: #20143c;
+  font-size: 26px;
+  font-weight: 900;
+  font-style: italic;
+  clip-path: polygon(50% 0%, 61% 18%, 80% 7%, 79% 28%, 100% 30%, 87% 47%, 100% 65%, 79% 67%, 81% 90%, 61% 79%, 50% 100%, 39% 79%, 19% 90%, 21% 67%, 0% 65%, 13% 47%, 0% 30%, 21% 28%, 20% 7%, 39% 18%);
+  animation: pow-burst .6s ease-out;
+  z-index: 9;
+}
+@keyframes pow-burst {
+  0% { transform: scale(0) rotate(-30deg); }
+  70% { transform: scale(1.25) rotate(8deg); }
+  100% { transform: scale(1) rotate(0); }
 }
 
 /* ---------- [3] 質問モーダル ---------- */

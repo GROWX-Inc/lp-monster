@@ -12,6 +12,7 @@
     <!-- 進行度表示(ゲーム中のみ表示) -->
     <header id="hud" hidden>
       <div id="hud-icons" aria-label="クエストの進行状況"></div>
+      <div id="hud-power" hidden></div>
       <div id="hud-count"></div>
     </header>
 
@@ -24,14 +25,22 @@
       <div id="guide" hidden></div>
     </section>
 
-    <!-- [2] ゲーム画面 -->
+    <!-- [2a] ゲーム画面(questモード:横スクロールRPG風) -->
     <section id="screen-game" class="screen" hidden>
       <div id="field">
         <div id="world"></div>
         <div id="hero"></div>
         <div id="tap-hint">タップで すすむ!</div>
       </div>
-      <div id="banner" hidden></div>
+    </section>
+
+    <!-- [2b] ゲーム画面(runnerモード:群衆ランナー風・宇宙) -->
+    <section id="screen-runner" class="screen" hidden>
+      <div id="stars"></div>
+      <div id="road"><div id="road-surface"></div></div>
+      <div id="crowd"></div>
+      <div id="foe" hidden></div>
+      <div id="gates" hidden></div>
     </section>
 
     <!-- [4] クリア画面 -->
@@ -42,6 +51,9 @@
       <a id="clear-cta" class="btn-big" href="#"></a>
       <p id="submit-note"></p>
     </section>
+
+    <!-- お知らせ表示(両モード共通) -->
+    <div id="banner" hidden></div>
 
   </div>
 

@@ -1,0 +1,73 @@
+{
+  "brand": {
+    "name": "カフェ・モンステラ(デモ)",
+    "logoUrl": "",
+    "mainColor": "#5a3fd6",
+    "accentColor": "#ff5fa2"
+  },
+  "mode": "runner",
+  "title": {
+    "heading": "アンケートギャラクシー",
+    "subheading": "宇宙ハイウェイを駆け抜けろ!2〜3分でクリアするとクーポンが…!",
+    "startLabel": "うちゅうへ とびだす"
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single",
+      "text": "当店は はじめてですか?",
+      "options": ["はじめて", "2回目以上"],
+      "event": "enemy"
+    },
+    {
+      "id": "q2",
+      "type": "single",
+      "text": "今日の注文はどっち派でしたか?",
+      "options": ["コーヒー", "コーヒー以外"],
+      "event": "enemy"
+    },
+    {
+      "id": "q3",
+      "type": "single",
+      "text": "お味には満足できましたか?",
+      "options": ["満足!", "いまいち…"],
+      "event": "enemy"
+    },
+    {
+      "id": "q4",
+      "type": "multi",
+      "text": "良かったところを全部教えてください(複数選べます)",
+      "options": ["味", "接客", "雰囲気", "価格"],
+      "event": "enemy"
+    },
+    {
+      "id": "q5",
+      "type": "single",
+      "text": "また来たいと思いますか?",
+      "options": ["ぜひ来たい!", "機会があれば"],
+      "event": "enemy"
+    },
+    {
+      "id": "q6",
+      "type": "text",
+      "text": "最後はボスUFO!ご意見・ご要望を書いて、とどめの一撃を!",
+      "event": "boss"
+    }
+  ],
+  "clear": {
+    "message": "アンケートへのご協力ありがとうございました!次回ご来店時に使える「ドリンク1杯無料クーポン」をプレゼント!(デモ用の仮特典です)",
+    "ctaLabel": "クーポンを うけとる",
+    "ctaUrl": "https://example.com/coupon-cafe"
+  },
+  "submit": {
+    "googleFormAction": "https://docs.google.com/forms/d/e/PLACEHOLDER/formResponse",
+    "fieldMap": {
+      "q1": "entry.1111111111",
+      "q2": "entry.2222222222",
+      "q3": "entry.3333333333",
+      "q4": "entry.4444444444",
+      "q5": "entry.5555555555",
+      "q6": "entry.6666666666"
+    }
+  }
+}
