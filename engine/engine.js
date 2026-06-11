@@ -137,16 +137,63 @@
     $('#clear-fx').textContent = '🎉✨🏆✨🎉';
     $('#clear-title').textContent = clearTitle || 'GAME CLEAR!';
     $('#clear-message').textContent = c.message || 'ご協力ありがとうございました!';
+
+    /* クーポン枠(チケット風)。config の clear.coupon があるときだけ表示 */
+    if (c.coupon && c.coupon.title) {
+      var box = $('#clear-coupon');
+      box.innerHTML = '';
+      var ticket = document.createElement('div');
+      ticket.className = 'coupon-ticket';
+      var title = document.createElement('div');
+      title.className = 'coupon-title';
+      title.textContent = c.coupon.title;
+      ticket.appendChild(title);
+      if (c.coupon.code) {
+        var code = document.createElement('div');
+        code.className = 'coupon-code';
+        code.textContent = c.coupon.code;
+        ticket.appendChild(code);
+      }
+      var note = document.createElement('div');
+      note.className = 'coupon-note';
+      note.textContent = c.coupon.note || 'スタッフにこの画面をお見せください';
+      ticket.appendChild(note);
+      box.appendChild(ticket);
+      box.hidden = false;
+    }
+
     var cta = $('#clear-cta');
     cta.textContent = c.ctaLabel || 'とくてんを うけとる';
     cta.href = c.ctaUrl || '#';
     $('#screen-clear').hidden = false;
+    dropConfetti();
 
     window.AIM_SUBMIT.send(config, answers).then(function (result) {
       $('#submit-note').textContent = result.sent
         ? '回答を送信しました。'
         : '※送信先が仮設定のため、回答の送信はスキップしました(デモ動作)。';
     });
+  }
+
+  /* 紙吹雪の演出(クリア画面) */
+  function dropConfetti() {
+    var screen = $('#screen-clear');
+    var holder = document.createElement('div');
+    holder.id = 'confetti';
+    var colors = ['#ffe14d', '#62e0ff', '#ff5fa2', '#7bd96a', '#b08cff'];
+    for (var i = 0; i < 36; i++) {
+      var p = document.createElement('span');
+      p.className = 'confetti-piece';
+      p.style.left = (Math.random() * 100) + '%';
+      p.style.background = colors[i % colors.length];
+      p.style.animationDelay = (Math.random() * 1.2) + 's';
+      p.style.animationDuration = (2.2 + Math.random() * 1.4) + 's';
+      holder.appendChild(p);
+    }
+    screen.appendChild(holder);
+    setTimeout(function () {
+      if (holder.parentNode) holder.parentNode.removeChild(holder);
+    }, 5000);
   }
 
   window.AIM_CORE = {

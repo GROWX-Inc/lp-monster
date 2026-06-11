@@ -34,13 +34,11 @@
       </div>
     </section>
 
-    <!-- [2b] ゲーム画面(runnerモード:群衆ランナー風・宇宙) -->
+    <!-- [2b] ゲーム画面(runnerモード:操作型シューティング・宇宙) -->
     <section id="screen-runner" class="screen" hidden>
-      <div id="stars"></div>
-      <div id="road"><div id="road-surface"></div></div>
-      <div id="crowd"></div>
-      <div id="foe" hidden></div>
-      <div id="gates" hidden></div>
+      <canvas id="game-canvas"></canvas>
+      <div id="cards" hidden></div>
+      <div id="go-burst" hidden>GO!!</div>
     </section>
 
     <!-- [4] クリア画面 -->
@@ -48,6 +46,7 @@
       <div id="clear-fx" aria-hidden="true"></div>
       <h2 id="clear-title"></h2>
       <p id="clear-message"></p>
+      <div id="clear-coupon" hidden></div>
       <a id="clear-cta" class="btn-big" href="#"></a>
       <p id="submit-note"></p>
     </section>
