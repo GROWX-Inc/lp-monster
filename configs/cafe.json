@@ -1,0 +1,73 @@
+{
+  "brand": {
+    "name": "カフェ・モンステラ(デモ)",
+    "logoUrl": "",
+    "mainColor": "#7A4E2D",
+    "accentColor": "#E8A33D"
+  },
+  "theme": "adventure",
+  "title": {
+    "heading": "アンケートクエスト",
+    "subheading": "2〜3分の冒険にでかけよう!すべての敵をたおすと、クーポンが手に入る…!",
+    "startLabel": "ぼうけんに でる"
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single",
+      "text": "当店にはどのくらいの頻度で来ていますか?",
+      "options": ["はじめて", "月1回くらい", "週1回くらい", "週2回以上"],
+      "event": "enemy"
+    },
+    {
+      "id": "q2",
+      "type": "multi",
+      "text": "今日注文したものを教えてください(複数選べます)",
+      "options": ["コーヒー", "紅茶・その他ドリンク", "ケーキ・スイーツ", "フード・軽食"],
+      "event": "chest"
+    },
+    {
+      "id": "q3",
+      "type": "single",
+      "text": "お味には満足いただけましたか?",
+      "options": ["とても満足", "満足", "ふつう", "不満"],
+      "event": "enemy"
+    },
+    {
+      "id": "q4",
+      "type": "single",
+      "text": "スタッフの接客はいかがでしたか?",
+      "options": ["とても良い", "良い", "ふつう", "気になる点があった"],
+      "event": "enemy"
+    },
+    {
+      "id": "q5",
+      "type": "single",
+      "text": "また来たいと思いますか?",
+      "options": ["ぜひ来たい", "機会があれば", "わからない"],
+      "event": "chest"
+    },
+    {
+      "id": "q6",
+      "type": "text",
+      "text": "最後の敵は手ごわい!ご意見・ご要望を書いて、とどめの一撃を!",
+      "event": "boss"
+    }
+  ],
+  "clear": {
+    "message": "アンケートへのご協力ありがとうございました!次回ご来店時に使える「ドリンク1杯無料クーポン」をプレゼント!(デモ用の仮特典です)",
+    "ctaLabel": "クーポンを うけとる",
+    "ctaUrl": "https://example.com/coupon-cafe"
+  },
+  "submit": {
+    "googleFormAction": "https://docs.google.com/forms/d/e/PLACEHOLDER/formResponse",
+    "fieldMap": {
+      "q1": "entry.1111111111",
+      "q2": "entry.2222222222",
+      "q3": "entry.3333333333",
+      "q4": "entry.4444444444",
+      "q5": "entry.5555555555",
+      "q6": "entry.6666666666"
+    }
+  }
+}
