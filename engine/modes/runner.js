@@ -22,7 +22,50 @@
   var FOCAL = 10;           // 擬似3Dの遠近の強さ
   var HERO_RANGE = 0.72;    // 主人公が左右に動ける範囲(道幅に対する割合)
   var ITEM_SIDE = 0.42;     // アイテムを置く左右の寄せ幅
-  var ITEM_CATCH = 0.22;    // アイテムを拾える距離(主人公との左右差)
+  var ITEM_CATCH = 0.22;    // アイテムを拾える距離(先頭の主人公との左右差)
+  var MAX_SQUAD = 12;       // 画面に表示する隊列人数の上限(性能対策。超過分は弾の威力へ)
+
+  /* 隊列の並び(先頭の後ろにV字で広がる)。[左右のずれ, 後ろへの距離px] */
+  var SLOTS = [
+    [-0.12, 26], [0.12, 26],
+    [-0.24, 52], [0.24, 52],
+    [0, 60],
+    [-0.36, 78], [0.36, 78],
+    [-0.12, 86], [0.12, 86],
+    [-0.48, 104], [0.48, 104]
+  ];
+
+  /* 効果音(ファイル不要の簡易シンセ。端末がマナーモードのときは鳴らない) */
+  var sound = (function () {
+    var actx = null;
+    function init() {
+      if (!actx) {
+        try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+      }
+      if (actx && actx.state === 'suspended') actx.resume();
+    }
+    function blip(freq, dur, vol, type) {
+      if (!actx) return;
+      try {
+        var o = actx.createOscillator(), g = actx.createGain();
+        o.type = type || 'square';
+        o.frequency.setValueAtTime(freq, actx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(freq * 0.4, actx.currentTime + dur);
+        g.gain.setValueAtTime(vol, actx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+        o.connect(g);
+        g.connect(actx.destination);
+        o.start();
+        o.stop(actx.currentTime + dur);
+      } catch (e) {}
+    }
+    return {
+      init: init,
+      shot: function (n) { blip(650 + Math.random() * 250, 0.06, Math.min(0.07, 0.015 + n * 0.005)); }, // 人数が多いほど少し賑やかに
+      coin: function () { blip(1300, 0.18, 0.09, 'triangle'); },
+      boom: function () { blip(110, 0.4, 0.16, 'sawtooth'); }
+    };
+  })();
 
   window.AIM_MODES = window.AIM_MODES || {};
   window.AIM_MODES.runner = {
@@ -38,7 +81,8 @@
     this.config = config;
     this.idx = 0;            // いま何問目か
     this.answers = {};       // 回答の記録
-    this.mult = 1;           // 攻撃倍率(アイテム取得・回答で上がる。弾1発のダメージ)
+    this.mult = 1;           // 攻撃力(=隊列の総人数。アイテム取得・回答で+1)
+    this.members = [];       // 画面上の仲間(先頭を除く。最大 MAX_SQUAD-1 人)
     this.state = 'idle';     // run / exploding / paused / done
     this.traveled = 0;       // 進んだ距離
     this.speed = WORLD_SPEED;
@@ -82,7 +126,6 @@
 
   Runner.prototype.updateHud = function () {
     $('#hud-count').textContent = this.idx + ' / ' + this.config.questions.length;
-    $('#hud-power').textContent = '×' + this.mult; // 攻撃倍率を常時表示
     var icons = $('#hud-icons').children;
     for (var i = 0; i < icons.length; i++) {
       if (i < this.idx && icons[i].className !== 'done') {
@@ -96,13 +139,13 @@
     $('#screen-title').hidden = true;
     $('#screen-runner').hidden = false;
     $('#hud').hidden = false;
-    $('#hud-power').hidden = false;
+    sound.init(); // スタートボタンのタップ(ユーザー操作)を合図に音を有効化
     this.initCanvas();
     this.bindInput();
     this.itemAt = this.traveled + 12;
     this.spawnAt = this.traveled + 26;
     this.state = 'run';
-    window.AIM_CORE.showBanner('ドラッグで いどう!⚡を ひろって ゲートを うちこわせ!');
+    window.AIM_CORE.showBanner('ドラッグで いどう!⚡で なかまを ふやそう!');
     var self = this;
     this.lastTs = performance.now();
     requestAnimationFrame(function loop(ts) {
@@ -210,43 +253,93 @@
       }
     }
 
-    // 自動射撃
+    // 自動射撃:隊列全員が一斉に撃つ(発射本数=人数。減りが目に見えて速くなる)
     this.fireTimer -= dt * 1000;
     if (this.fireTimer <= 0) {
       this.fireTimer = FIRE_MS;
-      this.bullets.push({ z: 1.5, fx: this.fx });
+      this.fireVolley();
     }
 
-    // 弾の前進と命中判定(主人公の正面=同じ側のゲートにだけ当たる)
+    // 弾の前進と命中判定(照準は常に先頭が向いている側のゲート)
     for (var i = this.bullets.length - 1; i >= 0; i--) {
       var b = this.bullets[i];
       b.z += BULLET_SPEED * dt;
       var hit = false;
       if (this.gates) {
-        var g = b.fx < 0 ? this.gates[0] : this.gates[1];
+        var g = b.aim < 0 ? this.gates[0] : this.gates[1];
         var gz = g.worldZ - this.traveled;
         if (b.z >= gz - 0.5 && g.hp > 0) {
-          g.hp -= this.mult; // ダメージ=攻撃倍率
+          g.hp -= b.dmg;
           hit = true;
           this.spark(g);
-          if (g.hp <= 0) this.destroyGate(g);
+          if (g.hp <= 0) {
+            this.destroyGate(g); // 弾リストはここで全消去されるため即座に抜ける
+            break;
+          }
         }
       }
       if (hit || b.z > 60) this.bullets.splice(i, 1);
     }
   };
 
-  /* アイテム取得:攻撃倍率アップ+「×2!」ポップ演出 */
+  /* 一斉射撃。表示上限を超えた人数分は弾1発の威力に上乗せ(見た目は同じ) */
+  Runner.prototype.fireVolley = function () {
+    var visible = 1 + this.members.length;
+    var dmg = this.mult / visible;
+    var aim = this.fx < 0 ? -1 : 1; // 先頭の位置で狙う側を決める(判定基準は先頭だけ)
+    var shooters = [{ fx: this.fx, y: this.heroY }];
+    for (var i = 0; i < this.members.length; i++) {
+      var pos = this.memberPos(this.members[i]);
+      shooters.push({ fx: pos.fx, y: pos.y });
+    }
+    for (var s = 0; s < shooters.length; s++) {
+      this.bullets.push({ z: 1.5, fx0: shooters[s].fx, aim: aim, aimFx: this.fx, dmg: dmg });
+      // 発射の光(人数が増えるほど賑やかになる)
+      this.particles.push({
+        x: this.w / 2 + shooters[s].fx * this.roadHalf,
+        y: shooters[s].y - 26,
+        vx: 0, vy: -40, rot: 0, vr: 0,
+        size: 5, life: 0.12, color: '#ffe14d'
+      });
+    }
+    sound.shot(visible);
+  };
+
+  /* 仲間の現在位置(合流アニメ中は画面外からの走り込みを補間) */
+  Runner.prototype.memberPos = function (m) {
+    var slot = SLOTS[m.slot];
+    var targetFx = Math.max(-0.95, Math.min(0.95, this.fx + slot[0]));
+    var targetY = this.heroY + slot[1];
+    if (m.t >= 1) return { fx: targetFx, y: targetY };
+    var e = 1 - Math.pow(1 - m.t, 3); // 走り込みの緩急
+    return {
+      fx: m.fromFx + (targetFx - m.fromFx) * e,
+      y: (targetY + 40) + (targetY - (targetY + 40)) * e
+    };
+  };
+
+  /* 仲間を1人追加(画面外から走って合流+「+1!」ポップ) */
+  Runner.prototype.addMember = function () {
+    if (this.members.length >= MAX_SQUAD - 1) return; // 超過分は威力に反映済み
+    this.members.push({
+      slot: this.members.length,
+      t: 0,
+      fromFx: (Math.random() < 0.5 ? -1 : 1) * 1.5
+    });
+    this.particles.push({
+      x: this.w / 2 + this.fx * this.roadHalf, y: this.heroY - 80,
+      vx: 0, vy: -70, rot: 0, vr: 0,
+      size: 32, life: 0.9, color: '#ffe14d', text: '+1!'
+    });
+  };
+
+  /* アイテム取得:仲間+1(合流アニメ+「+1!」ポップ) */
   Runner.prototype.collectItem = function () {
     this.item = null;
     this.mult++;
-    this.updateHud();
+    this.addMember();
+    sound.coin();
     var hx = this.w / 2 + this.fx * this.roadHalf;
-    this.particles.push({
-      x: hx, y: this.heroY - 70, vx: 0, vy: -70,
-      rot: 0, vr: 0, size: 34, life: 0.9,
-      color: '#ffe14d', text: '×' + this.mult + '!'
-    });
     for (var i = 0; i < 14; i++) {
       var ang = Math.random() * Math.PI * 2;
       var sp = Math.random() * 220 + 60;
@@ -260,6 +353,12 @@
   };
 
   Runner.prototype.updateFx = function (dt) {
+    // 仲間の合流アニメを進める
+    for (var mi = 0; mi < this.members.length; mi++) {
+      if (this.members[mi].t < 1) {
+        this.members[mi].t = Math.min(1, this.members[mi].t + dt / 0.6);
+      }
+    }
     for (var i = this.particles.length - 1; i >= 0; i--) {
       var p = this.particles[i];
       p.x += p.vx * dt;
@@ -320,6 +419,7 @@
     }
     this.shake = 1;
     this.flash = 1;
+    sound.boom();
     this.gates = null;
     this.item = null;
     this.bullets = [];
@@ -413,7 +513,7 @@
   Runner.prototype.onAnswer = function (q, value) {
     this.answers[q.id] = value;
     this.idx++;
-    this.mult++; // 回答ボーナス:答える=強くなる
+    this.mult++; // 回答ボーナス:答える=仲間が増える(合流は再開時に見せる)
     this.updateHud();
 
     var self = this;
@@ -431,12 +531,12 @@
     }, 350);
   };
 
-  /* 再開演出(PowerUp! ×○ + GO!!)→ 走行再開 */
+  /* 再開演出(なかま+1! + GO!!)→ 仲間が走り込んで合流 → 走行再開 */
   Runner.prototype.resume = function () {
     var go = $('#go-burst');
-    go.innerHTML = 'PowerUp! <span class="go-mult">×' + this.mult + '</span><small>GO!!</small>';
+    go.innerHTML = 'なかま <span class="go-mult">+1!</span><small>GO!!</small>';
     go.hidden = false;
-    var self = this;
+    this.addMember();
     this.lastTs = performance.now();
     this.state = 'run';
     this.itemAt = this.traveled + 12;
@@ -535,18 +635,30 @@
       for (var gi = 0; gi < 2; gi++) this.drawGate(this.gates[gi], t);
     }
 
-    // 弾(ネオン色の光弾)
+    // 弾(ネオン色の光弾。飛びながら先頭の照準へ収束する)
     ctx.fillStyle = this.colors.accent;
     for (var bi = 0; bi < this.bullets.length; bi++) {
       var b = this.bullets[bi];
       var bp = this.project(b.z);
-      var bx = cx + b.fx * bp.half;
+      var conv = Math.min(1, b.z / 25);
+      var bfx = b.fx0 + (b.aimFx - b.fx0) * conv;
+      var bx = cx + bfx * bp.half;
       ctx.beginPath();
       ctx.arc(bx, bp.y - 30 * bp.s, Math.max(2, 5 * bp.s), 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // 主人公(宇宙飛行士+エンジン光)
+    // 仲間の隊列(先頭の後ろにV字。後ろの列から描く)
+    ctx.font = '30px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (var mi = this.members.length - 1; mi >= 0; mi--) {
+      var mp = this.memberPos(this.members[mi]);
+      var mx = cx + mp.fx * this.roadHalf;
+      ctx.fillText('🧑‍🚀', mx, mp.y - 6 + Math.sin(t * 9 + mi) * 2);
+    }
+
+    // 先頭の主人公(判定の基準。足元の光で目立たせる)
     var hx = cx + this.fx * this.roadHalf;
     ctx.fillStyle = 'rgba(98, 224, 255, .35)';
     ctx.beginPath();
