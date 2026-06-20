@@ -25,7 +25,23 @@
   var ITEM_CATCH = 0.22;    // アイテムを拾える距離(先頭の主人公との左右差)
   var MAX_SQUAD = 12;       // 画面に表示する隊列人数の上限(性能対策。超過分は弾の威力へ)
   var BG_SRC = 'engine/themes/premium/bg-space.webp'; // 宇宙の背景画像(WebP・軽量化済み)
-  var DEBUG_BG = true;      // 原因切り分け用:背景画像の状態を画面に表示する(確認後に false にする)
+
+  /* ===== 背景演出の強さ調整(ここの数値だけで「派手/地味」を変えられる) =====
+     初期値は「初見で疾走感がはっきり分かる」やや強めに設定。下げたいときは各値を小さく。*/
+  var FX = {
+    // 1) 道路グリッドの高速スクロール(疾走感の主役)
+    grid:     { baseSpeed: 28, squadBoost: 0.22, spacing: 4.0, width: 2.6, intensity: 1.0, color: '#8af6ff' },
+    // 2) 両サイドの光の粒
+    side:     { rate: 30, max: 110, speedMul: 1.2, size: 3.4, intensity: 1.0, colors: ['#8af6ff', '#ff8fd6', '#ffffff'] },
+    // 3) 星のワープ(ハイパースペース・控えめ常時)
+    warp:     { count: 1.0, speed: 0.95, intensity: 0.7 },
+    // 4) 星雲の脈動(はっきり)
+    nebula:   { base: 0.07, amp: 0.17, breath: 0.10, speed: 0.6 },
+    // 5) 流れ星(頻度UP)
+    shooting: { minGap: 0.45, maxGap: 1.5, max: 5 },
+    // 6) 地平線のネオン帯(ピンクの脈動・明滅)
+    horizon:  { height: 84, base: 0.10, amp: 0.18, speed: 1.7, flicker: 0.14, core: 1.3 }
+  };
 
   /* 隊列の並び(先頭の後ろにV字で広がる)。[左右のずれ, 後ろへの距離px] */
   var SLOTS = [
@@ -94,8 +110,14 @@
     this.item = null;        // コース上のパワーアップアイテム(なければnull)
     this.particles = [];
     this.stars = [];
-    this.shootingStars = []; // 流れ星(たまに上空を横切る)
-    this.shootTimer = 2;     // 次の流れ星までの秒数
+    this.shootingStars = []; // 流れ星(上空を横切る)
+    this.shootTimer = 1.2;   // 次の流れ星までの秒数
+    this.warpStars = [];     // ワープ星(中央収束点から手前へ放射)
+    this.sideParticles = []; // 道の両サイドを後方へ流れる光の粒
+    this.sideSpawnAcc = 0;   // 光の粒スポーンの端数
+    this.gridScroll = 0;     // 道路グリッドのスクロール量(疾走感)
+    this.fxScale = 1;        // 演出の品質係数(重いと自動で下げる:0.4〜1.0)
+    this.fpsAvg = 60;        // 推定FPS(自動間引きの判断用)
     this.bgImg = null;       // 背景画像(読み込めるまではグラデーションで代用)
     this.bgReady = false;
     this.shake = 0;          // 画面振動の強さ
@@ -117,22 +139,10 @@
       accent: cssVar('--accent', '#ff5fa2')
     };
     // 背景画像を先読み(間に合わなくてもグラデーションで動くので安全)
-    // ※原因切り分け用に、読み込みの成否と実際のURLをconsoleと画面に出す(確認後に削除予定)
     var img = new Image();
-    this.bgStatus = 'loading';
-    img.onload = function () {
-      self.bgReady = true;
-      self.bgStatus = 'OK';
-      console.log('[runner] 背景画像 読み込み成功:', img.currentSrc || img.src,
-        '(' + img.naturalWidth + 'x' + img.naturalHeight + ')');
-    };
-    img.onerror = function () {
-      self.bgReady = false;
-      self.bgStatus = 'ERROR';
-      console.error('[runner] 背景画像 読み込み失敗(404等の可能性):', img.src);
-    };
+    img.onload = function () { self.bgReady = true; };
+    img.onerror = function () { self.bgReady = false; }; // 失敗時はグラデーションのまま継続
     img.src = BG_SRC;
-    console.log('[runner] 背景画像を要求:', BG_SRC, '→ 解決URL:', img.src);
     this.bgImg = img;
     this.buildHud();
     window.AIM_CORE.buildTitle(this.config, function () { self.enterGame(); });
@@ -195,9 +205,25 @@
       self.heroY = self.h - 120;
       self.roadHalf = self.w * 0.42;
       self.makeStars();
+      self.makeWarpStars();
     }
     resize();
     window.addEventListener('resize', resize);
+  };
+
+  /* ワープ星:中央収束点(道の消失点)から放射状に並べる。手前に来るほど速く・線状に伸びる */
+  Runner.prototype.makeWarpStars = function () {
+    this.warpStars = [];
+    var n = Math.round(this.w * this.h / 9000 * FX.warp.count); // 控えめな密度
+    var maxR = Math.hypot(this.w, this.h) * 0.62;
+    for (var i = 0; i < n; i++) {
+      this.warpStars.push({
+        ang: Math.random() * Math.PI * 2,
+        rad: Math.random() * maxR + 4,
+        prev: 0,
+        spd: 0.6 + Math.random() * 0.9
+      });
+    }
   };
 
   Runner.prototype.makeStars = function () {
@@ -243,35 +269,84 @@
   Runner.prototype.frame = function (ts) {
     var dt = Math.min(0.05, (ts - this.lastTs) / 1000);
     this.lastTs = ts;
-    this.updateAmbient(dt);  // 宇宙の動き(流れ星など)は回答ポーズ中も止めない
+    // 実機60fps維持:FPSを推定し、重いと判定したら演出の品質係数を自動で下げる
+    if (dt > 0.0005) {
+      this.fpsAvg += (1 / dt - this.fpsAvg) * 0.05;
+      if (this.fpsAvg < 50 && this.fxScale > 0.4) this.fxScale = Math.max(0.4, this.fxScale - dt * 0.6);
+      else if (this.fpsAvg > 57 && this.fxScale < 1) this.fxScale = Math.min(1, this.fxScale + dt * 0.25);
+    }
+    this.updateAmbient(dt);  // 宇宙の動き(ワープ星・流れ星など)は回答ポーズ中も止めない
     if (this.state === 'run') this.update(dt);
     if (this.state === 'run' || this.state === 'exploding') this.updateFx(dt);
     this.draw(ts / 1000);
   };
 
-  /* 宇宙のうごめき:流れ星を一定間隔でスポーンし、上空を横切らせる */
+  /* グリッド・光の粒の流れる速さ。隊列が増えるほど速くする(進行連動) */
+  Runner.prototype.flowSpeed = function () {
+    var squad = 1 + this.members.length;
+    return FX.grid.baseSpeed * (1 + (squad - 1) * FX.grid.squadBoost);
+  };
+
+  /* 宇宙のうごめき:ワープ星・流れ星・両サイドの光の粒・グリッドスクロールをまとめて進める */
   Runner.prototype.updateAmbient = function (dt) {
+    var moving = Math.max(0, Math.min(1, this.speed / WORLD_SPEED)); // 走行中=1、ゲート停止=0
+    var fs = this.flowSpeed();
+
+    // 道路グリッドのスクロール(停止中は止まる=ゲート前で減速する手触りに連動)
+    this.gridScroll += fs * (0.15 + 0.85 * moving) * dt;
+
+    // 流れ星(頻度UP・複数同時)
     this.shootTimer -= dt;
-    if (this.shootTimer <= 0 && this.shootingStars.length < 2) {
-      this.shootTimer = 2.5 + Math.random() * 4; // 2.5〜6.5秒ごと
+    if (this.shootTimer <= 0 && this.shootingStars.length < FX.shooting.max) {
+      this.shootTimer = FX.shooting.minGap + Math.random() * (FX.shooting.maxGap - FX.shooting.minGap);
       var fromLeft = Math.random() < 0.5;
-      var speed = (this.w * 0.9) + Math.random() * this.w * 0.5;
+      var sp = (this.w * 0.9) + Math.random() * this.w * 0.7;
       this.shootingStars.push({
         x: fromLeft ? -40 : this.w + 40,
-        y: Math.random() * this.horizonY * 0.8 + 8,
-        vx: (fromLeft ? 1 : -1) * speed,
-        vy: speed * (0.35 + Math.random() * 0.2), // 斜めに流れ落ちる
+        y: Math.random() * this.horizonY * 0.9 + 6,
+        vx: (fromLeft ? 1 : -1) * sp,
+        vy: sp * (0.3 + Math.random() * 0.25),
+        w: 1.6 + Math.random() * 1.6,           // 太さのばらつき
+        len: 0.07 + Math.random() * 0.05,        // 尾の長さのばらつき
         life: 1
       });
     }
     for (var i = this.shootingStars.length - 1; i >= 0; i--) {
       var s = this.shootingStars[i];
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      s.life -= dt * 0.9;
-      if (s.life <= 0 || s.x < -80 || s.x > this.w + 80 || s.y > this.h * 0.6) {
+      s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt * 0.9;
+      if (s.life <= 0 || s.x < -90 || s.x > this.w + 90 || s.y > this.h * 0.6) {
         this.shootingStars.splice(i, 1);
       }
+    }
+
+    // ワープ星(中央収束点から放射状に加速)
+    var maxR = Math.hypot(this.w, this.h) * 0.62;
+    for (var k = 0; k < this.warpStars.length; k++) {
+      var ws = this.warpStars[k];
+      ws.prev = ws.rad;
+      ws.rad += FX.warp.speed * (ws.rad * 0.7 + 28) * ws.spd * dt; // 外周ほど速い(遠近)
+      if (ws.rad > maxR) { ws.ang = Math.random() * Math.PI * 2; ws.rad = Math.random() * 24 + 4; ws.prev = ws.rad; }
+    }
+
+    // 両サイドの光の粒(奥から発生し手前=画面外へ高速で流れる)
+    this.sideSpawnAcc += FX.side.rate * (0.25 + 0.75 * moving) * this.fxScale * dt;
+    var cap = FX.side.max * this.fxScale;
+    while (this.sideSpawnAcc >= 1) {
+      this.sideSpawnAcc -= 1;
+      if (this.sideParticles.length < cap) {
+        this.sideParticles.push({
+          z: 58 + Math.random() * 12,
+          side: Math.random() < 0.5 ? -1 : 1,
+          spread: 1.02 + Math.random() * 0.4,    // 道の外側へどれだけ寄せるか
+          col: FX.side.colors[(Math.random() * FX.side.colors.length) | 0],
+          sz: 0.6 + Math.random() * 0.9
+        });
+      }
+    }
+    for (var j = this.sideParticles.length - 1; j >= 0; j--) {
+      var p = this.sideParticles[j];
+      p.z -= fs * FX.side.speedMul * (0.2 + 0.8 * moving) * dt;
+      if (p.z <= 0.3) this.sideParticles.splice(j, 1);
     }
   };
 
@@ -620,7 +695,10 @@
     // 背景:宇宙の画像(読み込み前はグラデーションで代用)
     this.drawBackground();
 
-    // 星雲のゆっくりした脈動(位置は固定、光量だけ呼吸させる)
+    // 星のワープ(中央収束点から手前へ放射状に流れる・控えめ常時)
+    this.drawWarpStars();
+
+    // 星雲の脈動(明滅+色ゆらぎ+わずかな呼吸)
     this.drawNebulaPulse(t);
 
     // 星(またたき)— 空の範囲にだけ重ねる
@@ -632,8 +710,11 @@
     }
     ctx.globalAlpha = 1;
 
-    // 流れ星(たまに上空を横切る)
+    // 流れ星(複数本が頻繁に横切る)
     this.drawShootingStars();
+
+    // 地平線のネオン帯(ピンクの光が脈動・明滅)
+    this.drawHorizonNeon(t);
 
     // プレイ領域(画面下)を少し沈めて、ゲーム要素が背景に溶けないようにする
     this.drawPlayfieldDim();
@@ -658,25 +739,18 @@
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    // 横グリッド(奥→手前へ流れ落ちて疾走感を出す。手前ほど速く・はっきり見える)
-    ctx.strokeStyle = '#62e0ff';
-    ctx.lineWidth = 1.5;
-    for (var gz = 6 - (this.traveled % 6); gz < 70; gz += 6) {
-      var gp = this.project(gz);
-      ctx.globalAlpha = 0.08 + 0.5 * gp.s;
-      ctx.beginPath();
-      ctx.moveTo(cx - gp.half, gp.y);
-      ctx.lineTo(cx + gp.half, gp.y);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
+    // 道路の高速グリッド(奥→手前へ流れ落ちる・疾走感の主役)
+    this.drawGridScroll();
 
-    // 中央の破線(走行感)
+    // 中央の破線(走行感。グリッドと同じスクロールで流す)
     ctx.fillStyle = 'rgba(255,255,255,.85)';
-    for (var z = 2 + (6 - this.traveled % 6); z < 60; z += 6) {
+    for (var z = 6 - (this.gridScroll % 6); z < 60; z += 6) {
       var p1 = this.project(z), p2 = this.project(z + 2.2);
       ctx.fillRect(cx - 3 * p1.s, p2.y, 6 * p1.s, p1.y - p2.y);
     }
+
+    // 両サイドの光の粒(道の外側を後方へ高速で流れる)
+    this.drawSideParticles();
 
     // パワーアップアイテム(⚡の光る玉)
     if (this.item) {
@@ -767,42 +841,95 @@
       ctx.fillStyle = 'rgba(255,255,255,' + (this.flash * 0.45) + ')';
       ctx.fillRect(0, 0, w, h);
     }
-
-    // 原因切り分け用の状態表示(背景画像のURLと成否)
-    this.drawDebug();
   };
 
-  /* 背景画像の読み込み状態と「実際に要求しているURL」を画面に表示する。
-     これでスマホ実機でも、404か・パス違いか・キャッシュかを目視判別できる(確認後に削除) */
-  Runner.prototype.drawDebug = function () {
-    if (!DEBUG_BG) return;
-    var ctx = this.ctx, w = this.w;
-    var url = (this.bgImg && (this.bgImg.currentSrc || this.bgImg.src)) || '(none)';
-    var lines = ['背景画像: ' + (this.bgStatus || '?')];
-    ctx.font = '10px monospace';
-    var max = w - 12, cur = '';
-    for (var i = 0; i < url.length; i++) {        // 幅に合わせてURLを折り返す
-      var t = cur + url.charAt(i);
-      if (ctx.measureText(t).width > max) { lines.push(cur); cur = url.charAt(i); }
-      else cur = t;
+  /* 星のワープ:中央収束点から外へ放射状に流れる光の線(ハイパースペース風・控えめ常時)。
+     fxScaleで本数を間引き、外周ほど明るく・太く伸ばす */
+  Runner.prototype.drawWarpStars = function () {
+    var ctx = this.ctx;
+    var cx0 = this.w / 2, cy0 = this.horizonY;
+    var maxR = Math.hypot(this.w, this.h) * 0.62;
+    var n = Math.round(this.warpStars.length * this.fxScale);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#dfe9ff';
+    for (var i = 0; i < n; i++) {
+      var s = this.warpStars[i];
+      var c = Math.cos(s.ang), si = Math.sin(s.ang);
+      var prog = Math.min(1, s.rad / maxR);
+      ctx.globalAlpha = (0.12 + 0.5 * prog) * FX.warp.intensity;
+      ctx.lineWidth = 0.6 + 1.8 * prog;
+      ctx.beginPath();
+      ctx.moveTo(cx0 + c * s.prev, cy0 + si * s.prev);
+      ctx.lineTo(cx0 + c * s.rad, cy0 + si * s.rad);
+      ctx.stroke();
     }
-    if (cur) lines.push(cur);
-    var lh = 13, pad = 5, boxH = pad * 2 + lh * lines.length;
-    ctx.fillStyle = 'rgba(0,0,0,0.62)';
-    ctx.fillRect(0, 0, w, boxH);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    for (var j = 0; j < lines.length; j++) {
-      if (j === 0) {
-        ctx.font = 'bold 12px sans-serif';
-        ctx.fillStyle = this.bgStatus === 'OK' ? '#7CFC9A'
-          : (this.bgStatus === 'ERROR' ? '#ff6b6b' : '#ffe14d');
-      } else {
-        ctx.font = '10px monospace';
-        ctx.fillStyle = '#cfd8ff';
-      }
-      ctx.fillText(lines[j], 6, pad + j * lh);
+    ctx.restore();
+  };
+
+  /* 地平線のネオン帯:消失点の高さにピンクの光の帯を重ね、脈動+速い明滅(ネオン管風) */
+  Runner.prototype.drawHorizonNeon = function (t) {
+    var ctx = this.ctx, w = this.w, y = this.horizonY, hh = FX.horizon.height;
+    var pulse = FX.horizon.base + FX.horizon.amp * (0.5 + 0.5 * Math.sin(t * FX.horizon.speed));
+    var flick = 1 - FX.horizon.flicker * (0.5 + 0.5 * Math.sin(t * 37)) * (0.5 + 0.5 * Math.sin(t * 13.3));
+    var a = pulse * flick;
+    var g = ctx.createLinearGradient(0, y - hh / 2, 0, y + hh / 2);
+    g.addColorStop(0, 'rgba(255,95,168,0)');
+    g.addColorStop(0.5, 'rgba(255,95,168,' + a + ')');
+    g.addColorStop(1, 'rgba(255,95,168,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.fillRect(0, y - hh / 2, w, hh);
+    // 芯の明るいライン
+    ctx.globalAlpha = Math.min(1, a * FX.horizon.core);
+    ctx.fillStyle = '#ff9ecb';
+    ctx.fillRect(0, y - 1.5, w, 3);
+    ctx.restore();
+  };
+
+  /* 道路の高速グリッド:奥→手前へ流れ落ちる横ライン。隊列が増えるほど速く・はっきり */
+  Runner.prototype.drawGridScroll = function () {
+    var ctx = this.ctx, cx = this.w / 2;
+    var step = FX.grid.spacing;
+    var off = this.gridScroll % step;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = FX.grid.color;
+    for (var gz = step - off; gz < 70; gz += step) {
+      var gp = this.project(gz);
+      ctx.globalAlpha = (0.10 + 0.7 * gp.s) * FX.grid.intensity;
+      ctx.lineWidth = Math.max(1, FX.grid.width * gp.s);
+      ctx.beginPath();
+      ctx.moveTo(cx - gp.half, gp.y);
+      ctx.lineTo(cx + gp.half, gp.y);
+      ctx.stroke();
     }
+    ctx.restore();
+  };
+
+  /* 両サイドの光の粒:道の外側ふちを後方(画面外)へ高速で流す。中央レーンには置かない */
+  Runner.prototype.drawSideParticles = function () {
+    var ctx = this.ctx, cx = this.w / 2;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < this.sideParticles.length; i++) {
+      var p = this.sideParticles[i];
+      var gp = this.project(p.z);
+      var x = cx + p.side * gp.half * p.spread;
+      var y = gp.y;
+      var r = Math.max(1, FX.side.size * gp.s * p.sz);
+      ctx.globalAlpha = Math.min(1, 0.2 + 0.8 * gp.s) * FX.side.intensity;
+      ctx.fillStyle = p.col;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      // 手前ほど長い縦の尾でスピード感を強調
+      ctx.globalAlpha *= 0.45;
+      ctx.fillRect(x - r * 0.5, y, r, r * 5 * gp.s);
+    }
+    ctx.restore();
   };
 
   /* 背景画像を「画面を覆う」配置で描く(cover相当。比率を保ち中央寄せ)。
@@ -825,20 +952,23 @@
     }
   };
 
-  /* 星雲の脈動:中央上の星雲・惑星まわりに、ゆっくり明滅する淡い光を重ねる。
-     白飛び防止のため加算合成(lighter)+低い不透明度に抑える(screen合成は使わない) */
+  /* 星雲の脈動:中央上の星雲・惑星まわりに、はっきり明滅+色ゆらぎ+わずかな呼吸(膨張収縮)。
+     白飛び防止のため加算合成(lighter)+上限を抑える(screen合成は使わない) */
   Runner.prototype.drawNebulaPulse = function (t) {
     var ctx = this.ctx, w = this.w, h = this.h;
     var glows = [
-      { cx: w * 0.56, cy: h * 0.28, col: '255,95,162', ph: 0.0, spd: 0.55 }, // マゼンタ
-      { cx: w * 0.40, cy: h * 0.34, col: '98,224,255', ph: 1.9, spd: 0.42 }  // シアン
+      { cx: w * 0.56, cy: h * 0.28, col: '255,95,168', ph: 0.0, spd: 1.0 },  // マゼンタ
+      { cx: w * 0.40, cy: h * 0.34, col: '98,224,255', ph: 2.1, spd: 0.78 }, // シアン
+      { cx: w * 0.50, cy: h * 0.24, col: '170,110,255', ph: 4.0, spd: 0.62 } // 紫(色ゆらぎ用)
     ];
-    var r = Math.max(w, h) * 0.45;
+    var r0 = Math.max(w, h) * 0.45;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (var i = 0; i < glows.length; i++) {
       var d = glows[i];
-      var a = 0.05 + 0.05 * (0.5 + 0.5 * Math.sin(t * d.spd + d.ph)); // 0.05〜0.10
+      var pulse = 0.5 + 0.5 * Math.sin(t * d.spd * FX.nebula.speed + d.ph);
+      var a = FX.nebula.base + FX.nebula.amp * pulse;          // 明滅(はっきり)
+      var r = r0 * (1 + FX.nebula.breath * Math.sin(t * d.spd * FX.nebula.speed + d.ph)); // 呼吸
       var g = ctx.createRadialGradient(d.cx, d.cy, 0, d.cx, d.cy, r);
       g.addColorStop(0, 'rgba(' + d.col + ',' + a + ')');
       g.addColorStop(1, 'rgba(' + d.col + ',0)');
@@ -857,14 +987,13 @@
     ctx.lineCap = 'round';
     for (var i = 0; i < this.shootingStars.length; i++) {
       var s = this.shootingStars[i];
-      var len = 0.09; // 尾の長さ(速度に対する割合)
-      var tx = s.x - s.vx * len, ty = s.y - s.vy * len;
+      var tx = s.x - s.vx * s.len, ty = s.y - s.vy * s.len; // 尾(速度・長さは個体差)
       var a = Math.max(0, Math.min(1, s.life)) * 0.9;
       var grad = ctx.createLinearGradient(s.x, s.y, tx, ty);
       grad.addColorStop(0, 'rgba(255,255,255,' + a + ')');
       grad.addColorStop(1, 'rgba(120,200,255,0)');
       ctx.strokeStyle = grad;
-      ctx.lineWidth = 2.4;
+      ctx.lineWidth = s.w;
       ctx.beginPath();
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(tx, ty);
