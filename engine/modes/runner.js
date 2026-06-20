@@ -24,6 +24,7 @@
   var ITEM_SIDE = 0.42;     // アイテムを置く左右の寄せ幅
   var ITEM_CATCH = 0.22;    // アイテムを拾える距離(先頭の主人公との左右差)
   var MAX_SQUAD = 12;       // 画面に表示する隊列人数の上限(性能対策。超過分は弾の威力へ)
+  var BG_SRC = 'engine/themes/premium/bg-space.webp'; // 宇宙の背景画像(WebP・軽量化済み)
 
   /* 隊列の並び(先頭の後ろにV字で広がる)。[左右のずれ, 後ろへの距離px] */
   var SLOTS = [
@@ -92,6 +93,10 @@
     this.item = null;        // コース上のパワーアップアイテム(なければnull)
     this.particles = [];
     this.stars = [];
+    this.shootingStars = []; // 流れ星(たまに上空を横切る)
+    this.shootTimer = 2;     // 次の流れ星までの秒数
+    this.bgImg = null;       // 背景画像(読み込めるまではグラデーションで代用)
+    this.bgReady = false;
     this.shake = 0;          // 画面振動の強さ
     this.flash = 0;          // 破壊時の白フラッシュ
     this.fireTimer = 0;
@@ -110,6 +115,11 @@
       main: cssVar('--main', '#5a3fd6'),
       accent: cssVar('--accent', '#ff5fa2')
     };
+    // 背景画像を先読み(間に合わなくてもグラデーションで動くので安全)
+    var img = new Image();
+    img.onload = function () { self.bgReady = true; };
+    img.src = BG_SRC;
+    this.bgImg = img;
     this.buildHud();
     window.AIM_CORE.buildTitle(this.config, function () { self.enterGame(); });
   };
@@ -178,11 +188,12 @@
 
   Runner.prototype.makeStars = function () {
     this.stars = [];
-    var n = Math.min(60, Math.round(this.w * this.h / 4200)); // 端末性能対策で数を抑える
+    var n = Math.min(48, Math.round(this.w * this.h / 5200)); // 端末性能対策で数を抑える
+    var skyBottom = (this.horizonY || this.h * 0.32) * 1.05;  // 空の範囲(道の上)に限定
     for (var i = 0; i < n; i++) {
       this.stars.push({
         x: Math.random() * this.w,
-        y: Math.random() * this.h * 0.85,
+        y: Math.random() * skyBottom,
         r: Math.random() * 1.6 + 0.6,
         ph: Math.random() * Math.PI * 2
       });
@@ -218,9 +229,36 @@
   Runner.prototype.frame = function (ts) {
     var dt = Math.min(0.05, (ts - this.lastTs) / 1000);
     this.lastTs = ts;
+    this.updateAmbient(dt);  // 宇宙の動き(流れ星など)は回答ポーズ中も止めない
     if (this.state === 'run') this.update(dt);
     if (this.state === 'run' || this.state === 'exploding') this.updateFx(dt);
     this.draw(ts / 1000);
+  };
+
+  /* 宇宙のうごめき:流れ星を一定間隔でスポーンし、上空を横切らせる */
+  Runner.prototype.updateAmbient = function (dt) {
+    this.shootTimer -= dt;
+    if (this.shootTimer <= 0 && this.shootingStars.length < 2) {
+      this.shootTimer = 2.5 + Math.random() * 4; // 2.5〜6.5秒ごと
+      var fromLeft = Math.random() < 0.5;
+      var speed = (this.w * 0.9) + Math.random() * this.w * 0.5;
+      this.shootingStars.push({
+        x: fromLeft ? -40 : this.w + 40,
+        y: Math.random() * this.horizonY * 0.8 + 8,
+        vx: (fromLeft ? 1 : -1) * speed,
+        vy: speed * (0.35 + Math.random() * 0.2), // 斜めに流れ落ちる
+        life: 1
+      });
+    }
+    for (var i = this.shootingStars.length - 1; i >= 0; i--) {
+      var s = this.shootingStars[i];
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.life -= dt * 0.9;
+      if (s.life <= 0 || s.x < -80 || s.x > this.w + 80 || s.y > this.h * 0.6) {
+        this.shootingStars.splice(i, 1);
+      }
+    }
   };
 
   Runner.prototype.update = function (dt) {
@@ -565,22 +603,26 @@
     var ctx = this.ctx;
     var w = this.w, h = this.h, cx = w / 2;
 
-    // 背景(宇宙のグラデーション)
-    var bg = ctx.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, '#070b26');
-    bg.addColorStop(0.55, '#1b1450');
-    bg.addColorStop(1, '#45207a');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
+    // 背景:宇宙の画像(読み込み前はグラデーションで代用)
+    this.drawBackground();
 
-    // 星(またたき)
+    // 星雲のゆっくりした脈動(位置は固定、光量だけ呼吸させる)
+    this.drawNebulaPulse(t);
+
+    // 星(またたき)— 空の範囲にだけ重ねる
     for (var i = 0; i < this.stars.length; i++) {
       var st = this.stars[i];
-      ctx.globalAlpha = 0.4 + 0.6 * Math.abs(Math.sin(t * 1.5 + st.ph));
+      ctx.globalAlpha = 0.25 + 0.5 * Math.abs(Math.sin(t * 1.5 + st.ph));
       ctx.fillStyle = '#fff';
       ctx.fillRect(st.x, st.y, st.r, st.r);
     }
     ctx.globalAlpha = 1;
+
+    // 流れ星(たまに上空を横切る)
+    this.drawShootingStars();
+
+    // プレイ領域(画面下)を少し沈めて、ゲーム要素が背景に溶けないようにする
+    this.drawPlayfieldDim();
 
     // 画面振動
     ctx.save();
@@ -601,6 +643,19 @@
     ctx.strokeStyle = '#62e0ff';
     ctx.lineWidth = 3;
     ctx.stroke();
+
+    // 横グリッド(奥→手前へ流れ落ちて疾走感を出す。手前ほど速く・はっきり見える)
+    ctx.strokeStyle = '#62e0ff';
+    ctx.lineWidth = 1.5;
+    for (var gz = 6 - (this.traveled % 6); gz < 70; gz += 6) {
+      var gp = this.project(gz);
+      ctx.globalAlpha = 0.08 + 0.5 * gp.s;
+      ctx.beginPath();
+      ctx.moveTo(cx - gp.half, gp.y);
+      ctx.lineTo(cx + gp.half, gp.y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
 
     // 中央の破線(走行感)
     ctx.fillStyle = 'rgba(255,255,255,.85)';
@@ -698,6 +753,85 @@
       ctx.fillStyle = 'rgba(255,255,255,' + (this.flash * 0.45) + ')';
       ctx.fillRect(0, 0, w, h);
     }
+  };
+
+  /* 背景画像を「画面を覆う」配置で描く(cover相当。比率を保ち中央寄せ)。
+     読み込み前は従来の宇宙グラデーションで代用するので表示は壊れない */
+  Runner.prototype.drawBackground = function () {
+    var ctx = this.ctx, w = this.w, h = this.h;
+    if (this.bgReady && this.bgImg) {
+      var iw = this.bgImg.naturalWidth || this.bgImg.width;
+      var ih = this.bgImg.naturalHeight || this.bgImg.height;
+      var scale = Math.max(w / iw, h / ih);
+      var dw = iw * scale, dh = ih * scale;
+      ctx.drawImage(this.bgImg, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    } else {
+      var bg = ctx.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, '#070b26');
+      bg.addColorStop(0.55, '#1b1450');
+      bg.addColorStop(1, '#45207a');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+    }
+  };
+
+  /* 星雲の脈動:中央上の星雲・惑星まわりに、ゆっくり明滅する淡い光を重ねる。
+     白飛び防止のため加算合成(lighter)+低い不透明度に抑える(screen合成は使わない) */
+  Runner.prototype.drawNebulaPulse = function (t) {
+    var ctx = this.ctx, w = this.w, h = this.h;
+    var glows = [
+      { cx: w * 0.56, cy: h * 0.28, col: '255,95,162', ph: 0.0, spd: 0.55 }, // マゼンタ
+      { cx: w * 0.40, cy: h * 0.34, col: '98,224,255', ph: 1.9, spd: 0.42 }  // シアン
+    ];
+    var r = Math.max(w, h) * 0.45;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < glows.length; i++) {
+      var d = glows[i];
+      var a = 0.05 + 0.05 * (0.5 + 0.5 * Math.sin(t * d.spd + d.ph)); // 0.05〜0.10
+      var g = ctx.createRadialGradient(d.cx, d.cy, 0, d.cx, d.cy, r);
+      g.addColorStop(0, 'rgba(' + d.col + ',' + a + ')');
+      g.addColorStop(1, 'rgba(' + d.col + ',0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.restore();
+  };
+
+  /* 流れ星:尾を引く短い光の線。加算合成で上空だけを横切る */
+  Runner.prototype.drawShootingStars = function () {
+    var ctx = this.ctx;
+    if (!this.shootingStars.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (var i = 0; i < this.shootingStars.length; i++) {
+      var s = this.shootingStars[i];
+      var len = 0.09; // 尾の長さ(速度に対する割合)
+      var tx = s.x - s.vx * len, ty = s.y - s.vy * len;
+      var a = Math.max(0, Math.min(1, s.life)) * 0.9;
+      var grad = ctx.createLinearGradient(s.x, s.y, tx, ty);
+      grad.addColorStop(0, 'rgba(255,255,255,' + a + ')');
+      grad.addColorStop(1, 'rgba(120,200,255,0)');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  /* プレイ領域(地平線から下)を少しずつ暗くして、
+     隊列・ゲート・弾・アイテムが明るい背景に溶けないようにする */
+  Runner.prototype.drawPlayfieldDim = function () {
+    var ctx = this.ctx, w = this.w, h = this.h, top = this.horizonY;
+    var g = ctx.createLinearGradient(0, top, 0, h);
+    g.addColorStop(0, 'rgba(6,9,30,0)');
+    g.addColorStop(1, 'rgba(6,9,30,0.5)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, top, w, h - top);
   };
 
   Runner.prototype.drawGate = function (gate, t) {
