@@ -25,6 +25,8 @@
   var ITEM_CATCH = 0.22;    // アイテムを拾える距離(先頭の主人公との左右差)
   var MAX_SQUAD = 12;       // 画面に表示する隊列人数の上限(性能対策。超過分は弾の威力へ)
   var BG_SRC = 'engine/themes/premium/bg-space.webp'; // 宇宙の背景画像(WebP・軽量化済み)
+  var SPRITE_DIR = 'engine/themes/premium/runner/';   // キャラのドット絵(透過WebP)
+  var SPRITE_NAMES = ['hero', 'ally', 'enemy-a', 'enemy-b', 'boss', 'item'];
 
   /* ===== 背景演出の強さ調整(ここの数値だけで「派手/地味」を変えられる) =====
      初期値は「初見で疾走感がはっきり分かる」やや強めに設定。下げたいときは各値を小さく。*/
@@ -144,6 +146,14 @@
     img.onerror = function () { self.bgReady = false; }; // 失敗時はグラデーションのまま継続
     img.src = BG_SRC;
     this.bgImg = img;
+    // キャラのドット絵を先読み(読み込めるまでは絵文字に自動フォールバック)
+    this.sprites = {};
+    SPRITE_NAMES.forEach(function (nm) {
+      var im = new Image();
+      im.onload = function () { im._ready = true; };
+      im.src = SPRITE_DIR + nm + '.webp';
+      self.sprites[nm] = im;
+    });
     this.buildHud();
     window.AIM_CORE.buildTitle(this.config, function () { self.enterGame(); });
   };
@@ -509,9 +519,11 @@
     var hp = Math.max(3, Math.round(targetSec * (1000 / FIRE_MS) * this.mult));
     // 出現位置をすでに通り過ぎている弾が遡って当たらないように消しておく
     this.bullets = this.bullets.filter(function (b) { return b.z < GATE_DIST - 2; });
+    // 敵の種類は毎問ランダム(左右ペアは同種)。最終問は boss
+    var kind = isBoss ? 'boss' : (Math.random() < 0.5 ? 'enemy-a' : 'enemy-b');
     this.gates = [
-      { side: -1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', boss: isBoss },
-      { side: 1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', boss: isBoss }
+      { side: -1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', kind: kind, boss: isBoss },
+      { side: 1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', kind: kind, boss: isBoss }
     ];
     window.AIM_CORE.showBanner(isBoss ? 'ボスゲートだ!うちこわせ!' : 'ゲートが せまってきた!');
   };
@@ -688,6 +700,20 @@
     return { x: this.w / 2 + gate.side * p.half * 0.5, y: p.y - 60 * p.s };
   };
 
+  /* ドット絵を枠(boxW×boxH)に収めて描く。縦横比は保持。
+     anchor='bottom' は (cx,cy) を足元、'center' は中心に合わせる。
+     読み込み前は false を返すので、呼び出し側で絵文字にフォールバックできる */
+  Runner.prototype.drawSprite = function (name, cx, cy, boxW, boxH, anchor) {
+    var im = this.sprites && this.sprites[name];
+    if (!im || !im._ready) return false;
+    var iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height;
+    if (!iw || !ih) return false;
+    var s = Math.min(boxW / iw, boxH / ih);
+    var dw = iw * s, dh = ih * s;
+    this.ctx.drawImage(im, cx - dw / 2, anchor === 'bottom' ? cy - dh : cy - dh / 2, dw, dh);
+    return true;
+  };
+
   Runner.prototype.draw = function (t) {
     var ctx = this.ctx;
     var w = this.w, h = this.h, cx = w / 2;
@@ -752,25 +778,32 @@
     // 両サイドの光の粒(道の外側を後方へ高速で流れる)
     this.drawSideParticles();
 
-    // パワーアップアイテム(⚡の光る玉)
+    // パワーアップアイテム(ドット絵。背後に脈動する光を敷いて目立たせる)
     if (this.item) {
       var ip = this.project(this.item.worldZ - this.traveled);
       var ix = cx + this.item.fx * ip.half;
       var iy = ip.y - 26 * ip.s;
       var ir = 22 * ip.s + 6;
-      ctx.fillStyle = 'rgba(255, 225, 77, ' + (0.25 + 0.15 * Math.sin(t * 6)) + ')';
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(120, 230, 255, ' + (0.18 + 0.12 * Math.sin(t * 6)) + ')';
       ctx.beginPath();
-      ctx.arc(ix, iy, ir * 1.5, 0, Math.PI * 2);
+      ctx.arc(ix, iy, ir * 1.7, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#ffe14d';
-      ctx.beginPath();
-      ctx.arc(ix, iy, ir, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.font = Math.round(ir * 1.2) + 'px serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#1d1640';
-      ctx.fillText('⚡', ix, iy + 1);
+      ctx.restore();
+      var box = 48 * ip.s + 16;
+      if (!this.drawSprite('item', ix, iy, box, box, 'center')) {
+        // フォールバック:従来の⚡光る玉
+        ctx.fillStyle = '#ffe14d';
+        ctx.beginPath();
+        ctx.arc(ix, iy, ir, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = Math.round(ir * 1.2) + 'px serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#1d1640';
+        ctx.fillText('⚡', ix, iy + 1);
+      }
     }
 
     // ゲート(奥にあるものから)
@@ -798,7 +831,10 @@
     for (var mi = this.members.length - 1; mi >= 0; mi--) {
       var mp = this.memberPos(this.members[mi]);
       var mx = cx + mp.fx * this.roadHalf;
-      ctx.fillText('🧑‍🚀', mx, mp.y - 6 + Math.sin(t * 9 + mi) * 2);
+      var mbob = Math.sin(t * 9 + mi) * 2;
+      if (!this.drawSprite('ally', mx, mp.y + 12 + mbob, 46, 52, 'bottom')) {
+        ctx.fillText('🧑‍🚀', mx, mp.y - 6 + mbob);
+      }
     }
 
     // 先頭の主人公(判定の基準。足元の光で目立たせる)
@@ -807,10 +843,13 @@
     ctx.beginPath();
     ctx.ellipse(hx, this.heroY + 16, 22, 8, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.font = '40px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🧑‍🚀', hx, this.heroY - 8 + Math.sin(t * 9) * 2);
+    var hbob = Math.sin(t * 9) * 2;
+    if (!this.drawSprite('hero', hx, this.heroY + 18 + hbob, 62, 70, 'bottom')) {
+      ctx.font = '40px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🧑‍🚀', hx, this.heroY - 8 + hbob);
+    }
 
     // パーティクル(破片・文字ポップ)
     for (var pi = 0; pi < this.particles.length; pi++) {
@@ -1033,16 +1072,22 @@
 
     // コア(エイリアン/ボスUFO)。背景と同化しないよう白い光彩を敷く
     var coreSize = Math.round((gate.boss ? 56 : 42) * p.s + 8);
+    var coreCx = gx + gw / 2;
     var coreY = gy + gh / 2 + Math.sin(t * 4 + gate.side) * 4 * p.s;
     ctx.fillStyle = 'rgba(255, 255, 255, .3)';
     ctx.beginPath();
-    ctx.arc(gx + gw / 2, coreY, coreSize * 0.62, 0, Math.PI * 2);
+    ctx.arc(coreCx, coreY, coreSize * 0.9, 0, Math.PI * 2);
     ctx.fill();
-    ctx.font = coreSize + 'px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
-    ctx.fillText(gate.core, gx + gw / 2, coreY);
+    // ドット絵(boss=横長は幅基準で大きめ、enemyはパネルいっぱいに)
+    var boxW = gate.boss ? gw * 1.18 : gw * 0.98;
+    var boxH = gate.boss ? gh * 0.9 : gh * 0.84;
+    if (!this.drawSprite(gate.kind, coreCx, coreY, boxW, boxH, 'center')) {
+      ctx.font = coreSize + 'px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(gate.core, coreCx, coreY);
+    }
 
     // 耐久値バッジ
     var label = String(gate.hp);
