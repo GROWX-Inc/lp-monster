@@ -25,6 +25,7 @@
   var ITEM_CATCH = 0.22;    // アイテムを拾える距離(先頭の主人公との左右差)
   var MAX_SQUAD = 12;       // 画面に表示する隊列人数の上限(性能対策。超過分は弾の威力へ)
   var BG_SRC = 'engine/themes/premium/bg-space.webp'; // 宇宙の背景画像(WebP・軽量化済み)
+  var DEBUG_BG = true;      // 原因切り分け用:背景画像の状態を画面に表示する(確認後に false にする)
 
   /* 隊列の並び(先頭の後ろにV字で広がる)。[左右のずれ, 後ろへの距離px] */
   var SLOTS = [
@@ -116,9 +117,22 @@
       accent: cssVar('--accent', '#ff5fa2')
     };
     // 背景画像を先読み(間に合わなくてもグラデーションで動くので安全)
+    // ※原因切り分け用に、読み込みの成否と実際のURLをconsoleと画面に出す(確認後に削除予定)
     var img = new Image();
-    img.onload = function () { self.bgReady = true; };
+    this.bgStatus = 'loading';
+    img.onload = function () {
+      self.bgReady = true;
+      self.bgStatus = 'OK';
+      console.log('[runner] 背景画像 読み込み成功:', img.currentSrc || img.src,
+        '(' + img.naturalWidth + 'x' + img.naturalHeight + ')');
+    };
+    img.onerror = function () {
+      self.bgReady = false;
+      self.bgStatus = 'ERROR';
+      console.error('[runner] 背景画像 読み込み失敗(404等の可能性):', img.src);
+    };
     img.src = BG_SRC;
+    console.log('[runner] 背景画像を要求:', BG_SRC, '→ 解決URL:', img.src);
     this.bgImg = img;
     this.buildHud();
     window.AIM_CORE.buildTitle(this.config, function () { self.enterGame(); });
@@ -752,6 +766,42 @@
     if (this.flash > 0) {
       ctx.fillStyle = 'rgba(255,255,255,' + (this.flash * 0.45) + ')';
       ctx.fillRect(0, 0, w, h);
+    }
+
+    // 原因切り分け用の状態表示(背景画像のURLと成否)
+    this.drawDebug();
+  };
+
+  /* 背景画像の読み込み状態と「実際に要求しているURL」を画面に表示する。
+     これでスマホ実機でも、404か・パス違いか・キャッシュかを目視判別できる(確認後に削除) */
+  Runner.prototype.drawDebug = function () {
+    if (!DEBUG_BG) return;
+    var ctx = this.ctx, w = this.w;
+    var url = (this.bgImg && (this.bgImg.currentSrc || this.bgImg.src)) || '(none)';
+    var lines = ['背景画像: ' + (this.bgStatus || '?')];
+    ctx.font = '10px monospace';
+    var max = w - 12, cur = '';
+    for (var i = 0; i < url.length; i++) {        // 幅に合わせてURLを折り返す
+      var t = cur + url.charAt(i);
+      if (ctx.measureText(t).width > max) { lines.push(cur); cur = url.charAt(i); }
+      else cur = t;
+    }
+    if (cur) lines.push(cur);
+    var lh = 13, pad = 5, boxH = pad * 2 + lh * lines.length;
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0, 0, w, boxH);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    for (var j = 0; j < lines.length; j++) {
+      if (j === 0) {
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillStyle = this.bgStatus === 'OK' ? '#7CFC9A'
+          : (this.bgStatus === 'ERROR' ? '#ff6b6b' : '#ffe14d');
+      } else {
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#cfd8ff';
+      }
+      ctx.fillText(lines[j], 6, pad + j * lh);
     }
   };
 
