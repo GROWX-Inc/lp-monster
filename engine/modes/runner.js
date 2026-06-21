@@ -42,8 +42,18 @@
     // 5) 流れ星(頻度UP)
     shooting: { minGap: 0.45, maxGap: 1.5, max: 5 },
     // 6) 地平線のネオン帯(ピンクの脈動・明滅)
-    horizon:  { height: 84, base: 0.10, amp: 0.18, speed: 1.7, flicker: 0.14, core: 1.3 }
+    horizon:  { height: 84, base: 0.10, amp: 0.18, speed: 1.7, flicker: 0.14, core: 1.3 },
+    // 7) 戦闘エフェクト(撃つ・当たる・壊す)
+    hit:      { sparks: 7, sparkSpeed: 340, flashR: 16, ring: 1, ringSpeed: 260 },
+    muzzle:   { glow: 11 },
+    destroy:  { shards: 30, rings: 2, flash: 0.6, shake: 1.25 },
+    numReact: { ms: 0.24, shake: 5 },
+    // 8) ボス戦の特別演出(最終問)
+    boss:     { fxMul: 1.9, telopMs: 1.4, slowmoScale: 0.32, introSlowmoMs: 0.5,
+                gaugeH: 20, defeatShards: 100, defeatRings: 5, defeatFlash: 0.9,
+                defeatShake: 1.8, defeatSlowmoMs: 0.7, defeatMs: 1200 }
   };
+  var MAX_PARTICLES = 240;   // パーティクル総数の上限(重い端末でのカクつき対策)
 
   /* 隊列の並び(先頭の後ろにV字で広がる)。[左右のずれ, 後ろへの距離px] */
   var SLOTS = [
@@ -124,6 +134,10 @@
     this.bgReady = false;
     this.shake = 0;          // 画面振動の強さ
     this.flash = 0;          // 破壊時の白フラッシュ
+    this.timeScale = 1;      // スローモーション用の時間倍率(1=通常)
+    this.slowmo = 0;         // スロー残り秒数(ボス出現・撃破の“タメ”)
+    this.telop = null;       // 中央テロップ(FINAL! など)
+    this.bossGauge = 1;      // ボスHPゲージの表示値(なめらかに追従)
     this.fireTimer = 0;
     this.spawnAt = 0;        // 次のゲートを出す距離
     this.itemAt = 0;         // 次のアイテムを出す距離
@@ -277,15 +291,22 @@
   /* ---------- ゲーム進行 ---------- */
 
   Runner.prototype.frame = function (ts) {
-    var dt = Math.min(0.05, (ts - this.lastTs) / 1000);
+    var realDt = Math.min(0.05, (ts - this.lastTs) / 1000);
     this.lastTs = ts;
     // 実機60fps維持:FPSを推定し、重いと判定したら演出の品質係数を自動で下げる
-    if (dt > 0.0005) {
-      this.fpsAvg += (1 / dt - this.fpsAvg) * 0.05;
-      if (this.fpsAvg < 50 && this.fxScale > 0.4) this.fxScale = Math.max(0.4, this.fxScale - dt * 0.6);
-      else if (this.fpsAvg > 57 && this.fxScale < 1) this.fxScale = Math.min(1, this.fxScale + dt * 0.25);
+    if (realDt > 0.0005) {
+      this.fpsAvg += (1 / realDt - this.fpsAvg) * 0.05;
+      if (this.fpsAvg < 50 && this.fxScale > 0.4) this.fxScale = Math.max(0.4, this.fxScale - realDt * 0.6);
+      else if (this.fpsAvg > 57 && this.fxScale < 1) this.fxScale = Math.min(1, this.fxScale + realDt * 0.25);
     }
-    this.updateAmbient(dt);  // 宇宙の動き(ワープ星・流れ星など)は回答ポーズ中も止めない
+    // スローモーション(ボス出現・撃破の“タメ”)。時間倍率をなめらかに補間
+    this.slowmo = Math.max(0, this.slowmo - realDt);
+    var tsTarget = this.slowmo > 0 ? FX.boss.slowmoScale : 1;
+    this.timeScale += (tsTarget - this.timeScale) * Math.min(1, realDt * 8);
+    var dt = realDt * this.timeScale;
+    // 中央テロップは実時間で進める(スローの影響を受けない)
+    if (this.telop) { this.telop.life -= realDt; if (this.telop.life <= 0) this.telop = null; }
+    this.updateAmbient(realDt);  // 宇宙の動き(ワープ星・流れ星など)は通常速度のまま
     if (this.state === 'run') this.update(dt);
     if (this.state === 'run' || this.state === 'exploding') this.updateFx(dt);
     this.draw(ts / 1000);
@@ -364,8 +385,9 @@
     // ゲートが目の前まで来たら減速して止まる(撃ち続ければ必ず壊せる)
     var targetSpeed = WORLD_SPEED;
     if (this.gates) {
-      var minZ = Math.min(this.gates[0].worldZ, this.gates[1].worldZ) - this.traveled;
-      if (minZ < STOP_Z + 4) targetSpeed = 0;
+      var nearestZ = this.gates[0].worldZ;
+      for (var gi2 = 1; gi2 < this.gates.length; gi2++) nearestZ = Math.min(nearestZ, this.gates[gi2].worldZ);
+      if (nearestZ - this.traveled < STOP_Z + 4) targetSpeed = 0;
     }
     this.speed += (targetSpeed - this.speed) * Math.min(1, dt * 5);
     this.traveled += this.speed * dt;
@@ -403,10 +425,12 @@
       b.z += BULLET_SPEED * dt;
       var hit = false;
       if (this.gates) {
-        var g = b.aim < 0 ? this.gates[0] : this.gates[1];
+        // ボスは中央1体(this.gates長さ1)、通常は照準側のゲート
+        var g = this.gates.length === 1 ? this.gates[0] : (b.aim < 0 ? this.gates[0] : this.gates[1]);
         var gz = g.worldZ - this.traveled;
         if (b.z >= gz - 0.5 && g.hp > 0) {
           g.hp -= b.dmg;
+          g.hitFlash = FX.numReact.ms; // 数字・本体の被弾リアクション
           hit = true;
           this.spark(g);
           if (g.hp <= 0) {
@@ -423,21 +447,25 @@
   Runner.prototype.fireVolley = function () {
     var visible = 1 + this.members.length;
     var dmg = this.mult / visible;
+    var bossSingle = this.gates && this.gates.length === 1 && this.gates[0].boss;
     var aim = this.fx < 0 ? -1 : 1; // 先頭の位置で狙う側を決める(判定基準は先頭だけ)
+    var aimFx = bossSingle ? 0 : this.fx; // ボスは中央へ弾を収束
     var shooters = [{ fx: this.fx, y: this.heroY }];
     for (var i = 0; i < this.members.length; i++) {
       var pos = this.memberPos(this.members[i]);
       shooters.push({ fx: pos.fx, y: pos.y });
     }
+    var mg = FX.muzzle.glow;
     for (var s = 0; s < shooters.length; s++) {
-      this.bullets.push({ z: 1.5, fx0: shooters[s].fx, aim: aim, aimFx: this.fx, dmg: dmg });
-      // 発射の光(人数が増えるほど賑やかになる)
-      this.particles.push({
-        x: this.w / 2 + shooters[s].fx * this.roadHalf,
-        y: shooters[s].y - 26,
-        vx: 0, vy: -40, rot: 0, vr: 0,
-        size: 5, life: 0.12, color: '#ffe14d'
-      });
+      this.bullets.push({ z: 1.5, fx0: shooters[s].fx, aim: aim, aimFx: aimFx, dmg: dmg });
+      // マズルフラッシュ(銃口の発光)を全員ぶん。重い時は後列を間引く
+      if (s === 0 || this.fxScale > 0.6 || Math.random() < this.fxScale) {
+        this.particles.push({
+          type: 'flash',
+          x: this.w / 2 + shooters[s].fx * this.roadHalf, y: shooters[s].y - 26,
+          r: mg * 0.5, r0: mg, life: 0.1, life0: 0.1, color: '#fff4b0'
+        });
+      }
     }
     sound.shot(visible);
   };
@@ -498,12 +526,32 @@
     }
     for (var i = this.particles.length - 1; i >= 0; i--) {
       var p = this.particles[i];
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (!p.text) p.vy += 420 * dt; // 文字ポップは落下させず浮かせる
-      p.rot += p.vr * dt;
-      p.life -= dt;
+      if (p.type === 'flash') {
+        p.life -= dt;
+      } else if (p.type === 'ring') {
+        p.rad += p.vrad * dt;
+        p.life -= dt;
+      } else { // 火花・破片(shard)・四角・文字ポップ
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        if (!p.text) p.vy += 420 * dt; // 文字ポップは落下させず浮かせる
+        p.rot += p.vr * dt;
+        p.life -= dt;
+      }
       if (p.life <= 0) this.particles.splice(i, 1);
+    }
+    // パーティクル総数の上限(古いものから間引く=重い端末でもカクつかない)
+    if (this.particles.length > MAX_PARTICLES) this.particles.splice(0, this.particles.length - MAX_PARTICLES);
+    // ゲートの被弾リアクション減衰
+    if (this.gates) {
+      for (var gg = 0; gg < this.gates.length; gg++) {
+        if (this.gates[gg].hitFlash > 0) this.gates[gg].hitFlash = Math.max(0, this.gates[gg].hitFlash - dt);
+      }
+      // ボスHPゲージの表示値を現在値へなめらかに追従
+      if (this.gates[0].boss) {
+        var frac = this.gates[0].hp / this.gates[0].maxHp;
+        this.bossGauge += (frac - this.bossGauge) * Math.min(1, dt * 6);
+      }
     }
     this.shake = Math.max(0, this.shake - dt * 2.2);
     this.flash = Math.max(0, this.flash - dt * 2.5);
@@ -519,46 +567,95 @@
     var hp = Math.max(3, Math.round(targetSec * (1000 / FIRE_MS) * this.mult));
     // 出現位置をすでに通り過ぎている弾が遡って当たらないように消しておく
     this.bullets = this.bullets.filter(function (b) { return b.z < GATE_DIST - 2; });
-    // 敵の種類は毎問ランダム(左右ペアは同種)。最終問は boss
-    var kind = isBoss ? 'boss' : (Math.random() < 0.5 ? 'enemy-a' : 'enemy-b');
-    this.gates = [
-      { side: -1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', kind: kind, boss: isBoss },
-      { side: 1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: isBoss ? '🛸' : '👾', kind: kind, boss: isBoss }
-    ];
-    window.AIM_CORE.showBanner(isBoss ? 'ボスゲートだ!うちこわせ!' : 'ゲートが せまってきた!');
+    if (isBoss) {
+      // ボスは中央1枚パネル。全弾が集中する1ターゲット
+      this.gates = [
+        { side: 0, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: '🛸', kind: 'boss', boss: true, hitFlash: 0 }
+      ];
+      this.bossGauge = 1;
+      this.slowmo = FX.boss.introSlowmoMs;   // 出現の“タメ”(一瞬の減速)
+      this.flash = 0.7;                       // 出現フラッシュ
+      this.telop = { life: FX.boss.telopMs, life0: FX.boss.telopMs, t1: 'FINAL!', t2: 'ラストバトル!' };
+    } else {
+      // 通常は左右2ゲート。敵種は毎問ランダム(ペアは同種)
+      var kind = Math.random() < 0.5 ? 'enemy-a' : 'enemy-b';
+      this.gates = [
+        { side: -1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: '👾', kind: kind, boss: false, hitFlash: 0 },
+        { side: 1, worldZ: this.traveled + GATE_DIST, hp: hp, maxHp: hp, core: '👾', kind: kind, boss: false, hitFlash: 0 }
+      ];
+    }
+    window.AIM_CORE.showBanner(isBoss ? 'ボスとうじょう!ラストバトル!' : 'ゲートが せまってきた!');
   };
 
-  /* 命中の火花 */
+  /* 命中演出:火花 + 着弾の小閃光 + 衝撃の波紋。ボスは倍率(fxMul)で派手に */
   Runner.prototype.spark = function (gate) {
     var pos = this.gateCenter(gate);
-    for (var i = 0; i < 3; i++) {
+    var mul = gate.boss ? FX.boss.fxMul : 1;
+    var n = Math.max(2, Math.round(FX.hit.sparks * mul * this.fxScale));
+    var cols = ['#ffffff', '#ffe14d', '#8af6ff'];
+    for (var i = 0; i < n; i++) {
+      var ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.3; // 主に上〜手前へ弾ける
+      var sp = Math.random() * FX.hit.sparkSpeed + 70;
       this.particles.push({
-        x: pos.x + (Math.random() * 30 - 15), y: pos.y + (Math.random() * 20 - 10),
-        vx: Math.random() * 160 - 80, vy: -Math.random() * 120,
+        x: pos.x + (Math.random() * 24 - 12), y: pos.y + (Math.random() * 18 - 9),
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
         rot: Math.random() * 6, vr: Math.random() * 10 - 5,
-        size: 4, life: 0.3, color: '#ffe14d'
+        size: Math.random() * 3 + 2, life: 0.22 + Math.random() * 0.16, color: cols[i % 3]
       });
+    }
+    // 着弾の小閃光
+    this.particles.push({ type: 'flash', x: pos.x, y: pos.y, r: FX.hit.flashR * 0.5 * mul, r0: FX.hit.flashR * mul, life: 0.12, life0: 0.12, color: '#ffffff' });
+    // 衝撃の波紋(リング)
+    for (var r = 0; r < FX.hit.ring; r++) {
+      this.particles.push({ type: 'ring', x: pos.x, y: pos.y, rad: 4, vrad: FX.hit.ringSpeed * mul, life: 0.3, life0: 0.3, lw: 2, color: gate.boss ? '#ff8fd0' : '#8af6ff' });
     }
   };
 
   /* 破壊演出(パーティクル+画面振動+フラッシュ)→ 完全ポーズ → カードUI */
   Runner.prototype.destroyGate = function (gate) {
     var pos = this.gateCenter(gate);
+    var boss = gate.boss;
     var colors = ['#ffe14d', '#62e0ff', this.colors.accent, '#ffffff', this.colors.main];
-    for (var i = 0; i < 42; i++) {
+    // 砕け散る破片(回転する板)
+    var shardN = Math.round((boss ? FX.boss.defeatShards : FX.destroy.shards) * this.fxScale);
+    for (var i = 0; i < shardN; i++) {
       var ang = Math.random() * Math.PI * 2;
-      var sp = Math.random() * 380 + 80;
+      var sp = Math.random() * (boss ? 520 : 380) + 80;
       this.particles.push({
-        x: pos.x, y: pos.y,
+        type: 'shard', x: pos.x, y: pos.y,
         vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 140,
         rot: Math.random() * 6, vr: Math.random() * 16 - 8,
-        size: Math.random() * 8 + 4, life: Math.random() * 0.5 + 0.45,
-        color: colors[i % colors.length]
+        w: Math.random() * 8 + 4, h: Math.random() * 4 + 3,
+        life: Math.random() * 0.6 + (boss ? 0.7 : 0.45), color: colors[i % colors.length]
       });
     }
-    this.shake = 1;
-    this.flash = 1;
+    // 衝撃波リング(複数)
+    var ringN = boss ? FX.boss.defeatRings : FX.destroy.rings;
+    for (var r = 0; r < ringN; r++) {
+      this.particles.push({
+        type: 'ring', x: pos.x, y: pos.y, rad: 6 + r * 8, vrad: 300 + r * 70,
+        life: 0.5 + r * 0.1, life0: 0.6 + r * 0.1, lw: boss ? 4 : 3,
+        color: r % 2 ? '#ffffff' : (boss ? '#ff8fd0' : '#8af6ff')
+      });
+    }
+    // 中心の大閃光
+    this.particles.push({ type: 'flash', x: pos.x, y: pos.y, r: 20, r0: boss ? 170 : 80, life: 0.3, life0: 0.3, color: '#ffffff' });
+    this.shake = boss ? FX.boss.defeatShake : FX.destroy.shake;
+    this.flash = boss ? FX.boss.defeatFlash : FX.destroy.flash;
     sound.boom();
+    if (boss) {
+      this.slowmo = FX.boss.defeatSlowmoMs; // スローモーション風の一拍
+      // 紙吹雪のひと吹き(クリア画面の紙吹雪へつなぐ)
+      var confN = Math.round(46 * this.fxScale);
+      for (var c = 0; c < confN; c++) {
+        this.particles.push({
+          x: this.w / 2 + (Math.random() - 0.5) * this.w, y: -10,
+          vx: (Math.random() - 0.5) * 70, vy: Math.random() * 120 + 70,
+          rot: Math.random() * 6, vr: Math.random() * 12 - 6,
+          size: Math.random() * 6 + 4, life: 1.5, color: colors[c % colors.length]
+        });
+      }
+    }
     this.gates = null;
     this.item = null;
     this.bullets = [];
@@ -567,7 +664,7 @@
     setTimeout(function () {
       self.state = 'paused'; // 完全ポーズ(回答するまで再開しない)
       self.openCards(self.config.questions[self.idx]);
-    }, 700);
+    }, boss ? FX.boss.defeatMs : 700);
   };
 
   /* ---------- カード回答UI(全質問タイプ統一・世界観デザイン) ---------- */
@@ -829,9 +926,9 @@
       }
     }
 
-    // ゲート(奥にあるものから)
+    // ゲート(通常は左右2枚、ボスは中央1枚)
     if (this.gates) {
-      for (var gi = 0; gi < 2; gi++) this.drawGate(this.gates[gi], t);
+      for (var gi = 0; gi < this.gates.length; gi++) this.drawGate(this.gates[gi], t);
     }
 
     // 弾(ネオン色の光弾。飛びながら先頭の照準へ収束する)
@@ -874,28 +971,51 @@
       ctx.fillText('🧑‍🚀', hx, this.heroY - 8 + hbob);
     }
 
-    // パーティクル(破片・文字ポップ)
+    // パーティクル(火花・破片・閃光・波紋・文字ポップ)
     for (var pi = 0; pi < this.particles.length; pi++) {
       var pt = this.particles[pi];
-      ctx.save();
-      ctx.translate(pt.x, pt.y);
-      ctx.rotate(pt.rot);
-      ctx.globalAlpha = Math.min(1, pt.life * 2.5);
-      ctx.fillStyle = pt.color;
-      if (pt.text) {
-        ctx.font = '900 italic ' + pt.size + 'px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#1d1640';
-        ctx.lineWidth = 4;
-        ctx.strokeText(pt.text, 0, 0);
-        ctx.fillText(pt.text, 0, 0);
-      } else {
-        ctx.fillRect(-pt.size / 2, -pt.size / 2, pt.size, pt.size);
+      if (pt.type === 'flash') { // 着弾/爆発の発光(加算)
+        var fa = Math.max(0, pt.life / pt.life0);
+        var fr = Math.max(1, pt.r0 - (pt.r0 - pt.r) * fa);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = fa;
+        var rg = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, fr);
+        rg.addColorStop(0, pt.color);
+        rg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = rg;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, fr, 0, Math.PI * 2); ctx.fill();
+      } else if (pt.type === 'ring') { // 衝撃波(加算の輪)
+        var ra = Math.max(0, pt.life / pt.life0);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = ra;
+        ctx.strokeStyle = pt.color;
+        ctx.lineWidth = Math.max(0.5, pt.lw * ra);
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.rad, 0, Math.PI * 2); ctx.stroke();
+      } else { // 火花・破片・文字
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.save();
+        ctx.translate(pt.x, pt.y);
+        ctx.rotate(pt.rot);
+        ctx.globalAlpha = Math.min(1, pt.life * 2.5);
+        ctx.fillStyle = pt.color;
+        if (pt.text) {
+          ctx.font = '900 italic ' + pt.size + 'px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.strokeStyle = '#1d1640';
+          ctx.lineWidth = 4;
+          ctx.strokeText(pt.text, 0, 0);
+          ctx.fillText(pt.text, 0, 0);
+        } else if (pt.type === 'shard') {
+          ctx.fillRect(-pt.w / 2, -pt.h / 2, pt.w, pt.h);
+        } else {
+          ctx.fillRect(-pt.size / 2, -pt.size / 2, pt.size, pt.size);
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
 
     // 破壊時の白フラッシュ
@@ -903,6 +1023,65 @@
       ctx.fillStyle = 'rgba(255,255,255,' + (this.flash * 0.45) + ')';
       ctx.fillRect(0, 0, w, h);
     }
+
+    // ボスHP大ゲージ(画面上部・最前面)
+    if (this.gates && this.gates[0].boss) this.drawBossGauge();
+    // 中央テロップ「FINAL! / ラストバトル!」(最前面)
+    if (this.telop) this.drawTelop();
+  };
+
+  /* ボスHPの大ゲージ(画面上部)。減少は updateFx でなめらかに追従 */
+  Runner.prototype.drawBossGauge = function () {
+    var ctx = this.ctx, w = this.w, g = this.gates[0];
+    var frac = Math.max(0, Math.min(1, this.bossGauge));
+    var mx = 16, gw = w - mx * 2, gh = FX.boss.gaugeH, gy = 16;
+    ctx.save();
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'left'; ctx.fillStyle = '#ff7bb0'; ctx.fillText('BOSS', mx, gy - 3);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#fff';
+    ctx.fillText(Math.max(0, Math.round(g.hp)) + ' / ' + g.maxHp, w - mx, gy - 3);
+    // 枠の下地
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    roundRect(ctx, mx, gy, gw, gh, gh / 2); ctx.fill();
+    // バー(赤→ピンクのグラデ)
+    var bw = (gw - 4) * frac;
+    if (bw > 0) {
+      var lg = ctx.createLinearGradient(mx, 0, mx + gw, 0);
+      lg.addColorStop(0, '#ff3b6b'); lg.addColorStop(1, '#ff9ad1');
+      ctx.fillStyle = lg;
+      roundRect(ctx, mx + 2, gy + 2, Math.max(gh - 4, bw), gh - 4, (gh - 4) / 2); ctx.fill();
+    }
+    ctx.strokeStyle = '#ff8fd0'; ctx.lineWidth = 2;
+    roundRect(ctx, mx, gy, gw, gh, gh / 2); ctx.stroke();
+    ctx.restore();
+  };
+
+  /* 中央テロップ:出だしでスケールイン→終わりにフェード */
+  Runner.prototype.drawTelop = function () {
+    var ctx = this.ctx, w = this.w, h = this.h, tp = this.telop;
+    var k = Math.max(0, tp.life / tp.life0);   // 1→0
+    var appear = Math.min(1, (1 - k) * 5);
+    var alpha = Math.min(1, k * 3);
+    var scale = 0.65 + appear * 0.45;
+    var cx = w / 2, cy = h * 0.34;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 italic ' + Math.round(62 * scale) + 'px sans-serif';
+    ctx.lineWidth = 8; ctx.strokeStyle = '#3a0a1e';
+    ctx.strokeText(tp.t1, cx, cy);
+    var lg2 = ctx.createLinearGradient(0, cy - 36, 0, cy + 36);
+    lg2.addColorStop(0, '#fff2a8'); lg2.addColorStop(1, '#ff5fa2');
+    ctx.fillStyle = lg2;
+    ctx.fillText(tp.t1, cx, cy);
+    ctx.font = '900 ' + Math.round(24 * scale) + 'px sans-serif';
+    ctx.lineWidth = 6; ctx.strokeStyle = '#3a0a1e';
+    ctx.strokeText(tp.t2, cx, cy + 44 * scale);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(tp.t2, cx, cy + 44 * scale);
+    ctx.restore();
   };
 
   /* 星のワープ:中央収束点から外へ放射状に流れる光の線(ハイパースペース風・控えめ常時)。
@@ -1080,10 +1259,19 @@
     var z = gate.worldZ - this.traveled;
     var p = this.project(z);
     var cx = this.w / 2;
-    var gw = p.half * 0.88;
-    var gh = (130 + (gate.boss ? 50 : 0)) * p.s;
-    var gx = cx + gate.side * p.half * 0.5 - gw / 2;
+    // ボスは中央1枚で大きめ
+    var gw = p.half * (gate.boss ? 1.5 : 0.88);
+    var gh = (130 + (gate.boss ? 90 : 0)) * p.s;
+    var gx = cx + gate.side * p.half * 0.5 - gw / 2; // ボスは side=0 で中央
     var gy = p.y - gh;
+
+    // 被弾リアクション:当たった瞬間にゲート全体を小さく揺らす
+    var react = gate.hitFlash > 0 ? gate.hitFlash / FX.numReact.ms : 0; // 1→0
+    ctx.save();
+    if (react > 0) {
+      ctx.translate((Math.random() - 0.5) * FX.numReact.shake * react,
+                    (Math.random() - 0.5) * FX.numReact.shake * react);
+    }
 
     // エネルギーバリア(半透明パネル+ネオン枠)
     ctx.fillStyle = gate.boss ? 'rgba(255, 90, 90, .25)' : 'rgba(98, 224, 255, .18)';
@@ -1102,8 +1290,8 @@
     ctx.arc(coreCx, coreY, coreSize * 0.9, 0, Math.PI * 2);
     ctx.fill();
     // ドット絵(boss=横長は幅基準で大きめ、enemyはパネルいっぱいに)
-    var boxW = gate.boss ? gw * 1.18 : gw * 0.98;
-    var boxH = gate.boss ? gh * 0.9 : gh * 0.84;
+    var boxW = gate.boss ? gw * 0.96 : gw * 0.98;
+    var boxH = gate.boss ? gh * 0.86 : gh * 0.84;
     if (!this.drawSprite(gate.kind, coreCx, coreY, boxW, boxH, 'center')) {
       ctx.font = coreSize + 'px serif';
       ctx.textAlign = 'center';
@@ -1111,25 +1299,39 @@
       ctx.fillStyle = '#fff';
       ctx.fillText(gate.core, coreCx, coreY);
     }
+    // ボスは被弾で赤く明滅(リアクション強化)
+    if (gate.boss && react > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = react * 0.5;
+      ctx.fillStyle = '#ff3b6b';
+      ctx.beginPath();
+      ctx.arc(coreCx, coreY, coreSize * 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
-    // 耐久値バッジ
-    var label = String(gate.hp);
-    ctx.font = 'bold ' + Math.round(13 * p.s + 8) + 'px sans-serif';
-    var bw = ctx.measureText(label).width + 22 * p.s + 8;
-    var bh = 20 * p.s + 10;
-    var bx = gx + gw / 2 - bw / 2;
-    var by = gy - bh - 6 * p.s;
-    ctx.fillStyle = '#e8403a';
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    roundRect(ctx, bx, by, bw, bh, bh / 2);
-    ctx.fill();
-    ctx.stroke();
-    // 数字は必ず中央寄せで描く(スプライト化で揃え設定が抜けると数字が崩れるため明示)
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, gx + gw / 2, by + bh / 2 + 1);
+    // 耐久値バッジ(ボスは上部の大ゲージで見せるので小バッジは出さない)
+    if (!gate.boss) {
+      var label = String(gate.hp);
+      ctx.font = 'bold ' + Math.round(13 * p.s + 8) + 'px sans-serif';
+      var bw = ctx.measureText(label).width + 22 * p.s + 8;
+      var bh = 20 * p.s + 10;
+      var bx = gx + gw / 2 - bw / 2;
+      var by = gy - bh - 6 * p.s;
+      ctx.fillStyle = react > 0 ? '#ff7b6b' : '#e8403a'; // 被弾で明滅
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      roundRect(ctx, bx, by, bw, bh, bh / 2);
+      ctx.fill();
+      ctx.stroke();
+      // 数字は必ず中央寄せで描く(揃え設定の取りこぼしで崩れるため明示)
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, gx + gw / 2, by + bh / 2 + 1);
+    }
+    ctx.restore();
   };
 
   function roundRect(ctx, x, y, w, h, r) {
