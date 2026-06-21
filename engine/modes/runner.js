@@ -591,9 +591,15 @@
 
     function finish(value) { self.onAnswer(q, value); }
 
+    /* 最終問だけ「これで けってい!」で確定。それ以外は選んだら即次へ。
+       ただし複数選択(multi)・記述(text)は性質上1タップで進めないため「次へ」ボタンで進む。*/
+    var isLast = this.idx === this.config.questions.length - 1;
+    var FINAL_LABEL = 'これで けってい!';
+    var NEXT_LABEL = 'つぎへ すすむ!';
+
     if (q.type === 'multi') {
       var selected = [];
-      var confirmBtn = makeConfirm();
+      var confirmBtn = makeConfirm(isLast ? FINAL_LABEL : NEXT_LABEL);
       (q.options || []).forEach(function (opt) {
         var card = makeCard(opt);
         card.addEventListener('click', function () {
@@ -612,7 +618,7 @@
       ta.className = 'cards-textarea';
       ta.rows = 4;
       ta.placeholder = '自由にご記入ください';
-      var confirmBtn2 = makeConfirm();
+      var confirmBtn2 = makeConfirm(isLast ? FINAL_LABEL : NEXT_LABEL);
       ta.addEventListener('input', function () {
         confirmBtn2.disabled = ta.value.trim() === '';
       });
@@ -620,12 +626,29 @@
       box.appendChild(ta);
       box.appendChild(confirmBtn2);
 
-    } else { // single(選択肢の数は問わない)
+    } else if (isLast) { // 最終問が single の場合:選択→「これで けってい!」で確定
+      var pending = null;
+      var confirmBtn3 = makeConfirm(FINAL_LABEL);
+      (q.options || []).forEach(function (opt) {
+        var card = makeCard(opt);
+        card.addEventListener('click', function () {
+          var picked = box.querySelectorAll('.answer-card.picked');
+          for (var k = 0; k < picked.length; k++) picked[k].classList.remove('picked');
+          card.classList.add('picked'); // 単一選択
+          pending = opt;
+          confirmBtn3.disabled = false;
+        });
+        box.appendChild(card);
+      });
+      confirmBtn3.addEventListener('click', function () { if (pending !== null) finish(pending); });
+      box.appendChild(confirmBtn3);
+
+    } else { // single(最終問以外):選んだら即・次へ。確定ボタンは出さない
       (q.options || []).forEach(function (opt) {
         var card = makeCard(opt);
         card.addEventListener('click', function () {
           card.classList.add('picked');
-          setTimeout(function () { finish(opt); }, 250); // 選んだ手応えを見せてから確定
+          setTimeout(function () { finish(opt); }, 250); // 選んだ手応えを見せてから進む
         });
         box.appendChild(card);
       });
@@ -637,10 +660,10 @@
       c.textContent = label;
       return c;
     }
-    function makeConfirm() {
+    function makeConfirm(label) {
       var b = document.createElement('button');
       b.className = 'btn-big cards-confirm';
-      b.textContent = 'これで けってい!';
+      b.textContent = label;
       b.disabled = true;
       return b;
     }
@@ -1102,7 +1125,10 @@
     roundRect(ctx, bx, by, bw, bh, bh / 2);
     ctx.fill();
     ctx.stroke();
+    // 数字は必ず中央寄せで描く(スプライト化で揃え設定が抜けると数字が崩れるため明示)
     ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.fillText(label, gx + gw / 2, by + bh / 2 + 1);
   };
 
