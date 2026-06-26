@@ -49,7 +49,7 @@
 
     <div id="board" style="position:absolute;top:16%;left:0;right:0;bottom:6%;z-index:3;display:none;">
       <img id="grillImg" style="position:absolute;bottom:9%;left:4%;width:92%;z-index:2;" alt="">
-      <canvas id="flameCv" style="position:absolute;bottom:14%;left:8%;width:84%;height:70px;z-index:3;"></canvas>
+      <canvas id="flameCv" style="position:absolute;bottom:27%;left:12%;width:76%;height:11.5%;z-index:3;"></canvas>
       <div id="skewerWrap" style="position:absolute;top:14%;left:0;right:0;height:46%;z-index:4;">
         <img id="skewerImg" style="position:absolute;top:46.7%;left:50%;transform:translate(-50%,-50%);width:86%;z-index:1;" alt="">
         <div id="itemsLayer" style="position:absolute;inset:0;z-index:2;"></div>
@@ -199,7 +199,7 @@ const CONFIG = {
   function reset(){si=0;ii=0;tapsInItem=0;boosted=false;perItem=Math.round(CONFIG.tapsBase/(NS*NI));answers=[];energyShown=false;firstEnergy=true;clearTimeout(energyTimer);clearTimeout(energyHideTimer);energy.style.display='none';}
 
   function startSkewer(){ii=0;tapsInItem=0;skewerName.textContent=CONFIG.skewers[si].name;slotN.textContent='0';updateDots();renderItems(-1);tapLayer.style.display='block';hint.style.display='block';}
-  function startPlay(){state='play';hud.style.display='block';board.style.display='block';startFlame();startSkewer();scheduleEnergy();}
+  function startPlay(){state='play';hud.style.display='block';board.style.display='block';if(window.__startCharcoal)window.__startCharcoal();startSkewer();scheduleEnergy();}
 
   function doCook(){if(state!=='play')return;tapsInItem++;var bi=(tapsInItem===1)?ii:-1;renderItems(bi);if(bi>=0)setTimeout(function(){renderItems(-1);},120);
     if(tapsInItem>=perItem){tapsInItem=0;ii++;slotN.textContent=ii;renderItems(-1);
@@ -229,29 +229,175 @@ const CONFIG = {
   function finishAll(){state='result';clearTimeout(energyTimer);clearTimeout(energyHideTimer);energy.style.display='none';hint.style.display='none';
     setTimeout(function(){hud.style.display='none';board.style.display='none';tapLayer.style.display='none';resultScrim.style.display='flex';},300);}
 
-  /* コード炎 */
-  var fcv=document.getElementById('flameCv'),fctx=fcv.getContext('2d'),DPR=Math.min(window.devicePixelRatio||1,2),FW,FH,emberY,coals=[],flames=[],sparks=[],ft=0,flameRAF=null;
-  function flameResize(){var r=fcv.getBoundingClientRect();if(!r.width)return;fcv.width=r.width*DPR;fcv.height=r.height*DPR;fctx.setTransform(DPR,0,0,DPR,0,0);FW=r.width;FH=r.height;flameSetup();}
-  function flameSetup(){emberY=FH*0.7;coals=[];flames=[];var n=10,pad=FW*0.05,span=FW-pad*2;for(var i=0;i<n;i++){var x=pad+span*(i/(n-1));coals.push({x:x});flames.push({x:x,phase:Math.random()*Math.PI*2,h:0.7+Math.random()*0.5,sway:5+Math.random()*6,sp:0.04+Math.random()*0.03});}}
-  function flameShape(f,t,scale,stops,drop){var bx=f.x+Math.sin(t*f.sp*60+f.phase)*f.sway*0.5,by=emberY+(drop||0),ty=emberY-(34*f.h*scale)-Math.sin(t*f.sp*40+f.phase)*4,w=10*scale,mx=bx+Math.sin(t*f.sp*50+f.phase*1.3)*f.sway;var g=fctx.createLinearGradient(0,by,0,ty);for(var i=0;i<stops.length;i++)g.addColorStop(stops[i][0],stops[i][1]);fctx.fillStyle=g;fctx.beginPath();fctx.moveTo(bx-w,by);fctx.quadraticCurveTo(mx-w*0.7,(by+ty)/2,mx,ty);fctx.quadraticCurveTo(mx+w*0.7,(by+ty)/2,bx+w,by);fctx.quadraticCurveTo(bx,by+4,bx-w,by);fctx.closePath();fctx.fill();}
-  function flameFrame(){if(!FW){flameResize();}ft+=0.016;fctx.clearRect(0,0,FW,FH);fctx.globalCompositeOperation='lighter';
-    var bandG=fctx.createRadialGradient(FW/2,emberY+4,0,FW/2,emberY+4,FW*0.55);bandG.addColorStop(0,'rgba(255,110,35,0.22)');bandG.addColorStop(0.5,'rgba(255,90,25,0.09)');bandG.addColorStop(1,'rgba(255,80,20,0)');fctx.fillStyle=bandG;fctx.beginPath();fctx.ellipse(FW/2,emberY+4,FW*0.5,11,0,0,Math.PI*2);fctx.fill();
-    coals.forEach(function(c,i){var gl=0.5+0.5*Math.sin(ft*2+i);var rg=fctx.createRadialGradient(c.x,emberY+2,0,c.x,emberY+2,11);rg.addColorStop(0,'rgba(255,'+(120+gl*90)+',45,'+(0.4+gl*0.26)+')');rg.addColorStop(0.5,'rgba(255,100,30,'+(0.12+gl*0.08)+')');rg.addColorStop(1,'rgba(255,80,20,0)');fctx.fillStyle=rg;fctx.beginPath();fctx.ellipse(c.x,emberY+2,9,11,0,0,Math.PI*2);fctx.fill();});
-    flames.forEach(function(f){
-      flameShape(f,ft,1.25,[[0,'rgba(255,120,30,0)'],[0.25,'rgba(255,120,30,0.5)'],[0.7,'rgba(255,170,50,0.45)'],[1,'rgba(255,210,90,0.12)']],6);
-      flameShape(f,ft,0.9,[[0,'rgba(255,150,40,0)'],[0.3,'rgba(255,180,60,0.65)'],[0.8,'rgba(255,225,120,0.65)'],[1,'rgba(255,245,180,0.18)']],6);
-      flameShape(f,ft,0.42,[[0,'rgba(90,150,255,0)'],[0.12,'rgba(80,160,255,0.65)'],[0.4,'rgba(120,200,255,0.45)'],[0.62,'rgba(255,200,90,0.45)'],[1,'rgba(255,230,150,0)']],4);
-      flameShape(f,ft,0.5,[[0,'rgba(255,220,120,0)'],[0.45,'rgba(255,240,190,0.75)'],[1,'rgba(255,255,235,0.4)']],4);
-    });
-    if(Math.random()<0.3){var src=coals[Math.floor(Math.random()*coals.length)];sparks.push({x:src.x+(Math.random()-0.5)*6,y:emberY,vy:-(0.5+Math.random()*0.9),vx:(Math.random()-0.5)*0.4,life:1});}
-    sparks.forEach(function(s){s.x+=s.vx;s.y+=s.vy;s.vy*=0.99;s.life-=0.014;var a=Math.max(s.life,0);fctx.fillStyle='rgba(255,'+(170+Math.random()*60)+',60,'+a+')';fctx.beginPath();fctx.arc(s.x,s.y,1.2,0,Math.PI*2);fctx.fill();});
-    sparks=sparks.filter(function(s){return s.life>0&&s.y>FH*0.05;});
-    fctx.globalCompositeOperation='source-over';
-    flameRAF=requestAnimationFrame(flameFrame);
-  }
-  function startFlame(){if(!flameRAF){flameResize();flameFrame();}}
-  window.addEventListener('resize',function(){if(flameRAF)flameResize();});
+  /* 焼き台演出は下のスクリプトの炭火床(charcoal bed)で描画 */
 })();
+</script>
+<script>
+/* ============================================================
+   炭火床（charcoal bed）演出 ― 既存の炎(flameCv)を置き換える用
+   ------------------------------------------------------------
+   ■ これは何か
+     yakitori-rush の焼き台の「網の下」の演出。
+     従来は炎だけが浮いていたが、これを「赤熱した炭が横長に敷き詰められ、
+     炎は控えめにちらつく」炭火床に置き換える。
+     すべて Canvas 描画（動画・画像なし・軽量）。
+
+   ■ 置き換え方（既存コードとの対応）
+     既存HTMLには flameCv という canvas と、その描画ループ（flameFrame等）がある。
+     1. 既存の「炎だけ」を描く flameFrame / flameSetup / flameShape を、
+        下の charcoalSetup / charcoalFrame / cFlameShape に置き換える。
+     2. startFlame() から charcoalFrame を呼ぶようにする（下のstartCharcoalを使う）。
+     3. flameCv の表示サイズ/位置は「網の幅に合わせる」こと（後述）。
+
+   ■ 網の幅に合わせる（重要）
+     炭床は canvas の全幅に描かれる。よって flameCv の CSS 幅を
+     「網（grillImg）の天板の幅」に合わせ、位置を網の下に重ねること。
+     - 横長（網は約3:1）なので、flameCv の高さは抑えめ、幅は網いっぱい。
+     - 炭床の上面が網の天板のすぐ下に来るよう、top/bottom を調整。
+     - 実機で見ながら微調整（DOM値だけで完了としない）。
+   ============================================================ */
+
+(function(){
+  // === 既存の flameCv をそのまま使う ===
+  var cv = document.getElementById('flameCv');
+  if(!cv) return;
+  var ctx = cv.getContext('2d');
+  var DPR = Math.min(window.devicePixelRatio||1, 2);
+  var W, H;
+  function rnd(a,b){ return a + Math.random()*(b-a); }
+
+  var bedY, embers=[], coals=[], flames=[], sparks=[], smokes=[], rafId=null, t=0;
+
+  function charcoalResize(){
+    var r = cv.getBoundingClientRect();
+    if(!r.width) return;
+    cv.width = r.width*DPR; cv.height = r.height*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    W = r.width; H = r.height;
+    charcoalSetup();
+  }
+
+  function charcoalSetup(){
+    bedY = H*0.5;             // 炭床の上面（網のすぐ下に来るよう、CSS側で位置調整）
+    embers=[]; coals=[]; flames=[];
+    var pad = W*0.02, span = W-pad*2;
+
+    // 赤熱（高温部・主役）
+    var ne = Math.floor(span/9);
+    for(var i=0;i<ne;i++) embers.push({x:pad+rnd(0,span), y:bedY+rnd(-3,18), r:rnd(7,15), p:Math.random()*6.28, sp:rnd(1.8,3.2)});
+
+    // 炭の塊（多角形・質感つき）
+    var nc = Math.floor(span/18);
+    for(var i=0;i<nc;i++){
+      var w=rnd(20,42), h=rnd(11,20), pts=[], sides=6+Math.floor(Math.random()*3);
+      for(var s=0;s<sides;s++){ var ang=(s/sides)*6.28, rr=0.5+rnd(-0.12,0.12); pts.push([Math.cos(ang)*w*rr, Math.sin(ang)*h*rr]); }
+      coals.push({x:pad+rnd(0,span), y:bedY+rnd(-9,11), w:w, h:h, rot:rnd(-0.6,0.6), pts:pts, ash:Math.random()<0.55, crack:rnd(0,1), heat:Math.random()*6.28});
+    }
+    coals.sort(function(a,b){return a.y-b.y;}); // 奥→手前
+
+    // 炎（控えめ・低く小さく）
+    var nf = Math.floor(span/30); // 炎の本数(数値を小さくすると炎が増える/大きくすると減る)
+    for(var i=0;i<nf;i++) flames.push({x:pad+rnd(0,span), base:bedY+rnd(-4,6), phase:Math.random()*6.28, h:rnd(0.35,0.7), sway:rnd(3,7), sp:rnd(0.04,0.08), w:rnd(0.6,1.0), flick:Math.random()*6.28});
+  }
+
+  function cFlameShape(f, t, scale, stops, flick){
+    var bx=f.x+Math.sin(t*f.sp*60+f.phase)*f.sway*0.5, by=f.base;
+    var fl = flick ? (1+0.12*Math.sin(t*14+f.flick)) : 1;
+    var topY = by-(36*f.h*scale*fl)-Math.sin(t*f.sp*40+f.phase)*4;
+    var w=9*scale*f.w, mx=bx+Math.sin(t*f.sp*50+f.phase*1.3)*f.sway, mx2=bx+Math.sin(t*f.sp*70+f.phase*0.7)*f.sway*0.6;
+    var g=ctx.createLinearGradient(0,by,0,topY);
+    for(var i=0;i<stops.length;i++) g.addColorStop(stops[i][0], stops[i][1]);
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.moveTo(bx-w,by);
+    ctx.bezierCurveTo(mx-w*0.8,(by*0.6+topY*0.4), mx2-w*0.4,(by*0.3+topY*0.7), mx,topY);
+    ctx.bezierCurveTo(mx2+w*0.4,(by*0.3+topY*0.7), mx+w*0.8,(by*0.6+topY*0.4), bx+w,by);
+    ctx.quadraticCurveTo(bx,by+3, bx-w,by); ctx.closePath(); ctx.fill();
+  }
+
+  function charcoalFrame(){
+    if(!W){ charcoalResize(); }
+    t+=0.016; ctx.clearRect(0,0,W,H);
+
+    // 炭床ベース陰影
+    var baseG=ctx.createLinearGradient(0,bedY-22,0,H);
+    baseG.addColorStop(0,'rgba(58,32,9,0)'); baseG.addColorStop(0.28,'rgba(42,26,10,0.8)'); baseG.addColorStop(0.6,'#1c1006'); baseG.addColorStop(1,'#0a0603');
+    ctx.fillStyle=baseG; ctx.fillRect(0,bedY-22,W,H-bedY+22);
+
+    // 床の底光り
+    ctx.globalCompositeOperation='lighter';
+    var floorG=ctx.createLinearGradient(0,bedY-6,0,bedY+34);
+    floorG.addColorStop(0,'rgba(255,120,40,0)'); floorG.addColorStop(0.4,'rgba(255,105,32,0.42)'); floorG.addColorStop(1,'rgba(255,70,20,0)');
+    ctx.fillStyle=floorG; ctx.fillRect(W*0.02,bedY-6,W*0.96,40);
+
+    // 赤熱（主役）
+    embers.forEach(function(e){
+      var gl=0.55+0.45*Math.sin(t*e.sp+e.p);
+      var rg=ctx.createRadialGradient(e.x,e.y,0,e.x,e.y,e.r*1.8);
+      rg.addColorStop(0,'rgba(255,'+(165+gl*55)+',75,'+(0.66+gl*0.3)+')');
+      rg.addColorStop(0.45,'rgba(255,100,30,'+(0.36+gl*0.18)+')');
+      rg.addColorStop(1,'rgba(255,70,15,0)');
+      ctx.fillStyle=rg; ctx.beginPath(); ctx.ellipse(e.x,e.y,e.r*1.8,e.r*1.1,0,0,6.29); ctx.fill();
+    });
+    ctx.globalCompositeOperation='source-over';
+
+    // 炭の塊
+    coals.forEach(function(c){
+      ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.rot);
+      var cg=ctx.createLinearGradient(0,-c.h*0.6,0,c.h*0.6);
+      cg.addColorStop(0,'rgba(72,60,52,0.97)'); cg.addColorStop(0.5,'rgba(34,26,20,0.98)'); cg.addColorStop(1,'rgba(8,5,3,0.99)');
+      ctx.fillStyle=cg;
+      ctx.beginPath(); ctx.moveTo(c.pts[0][0],c.pts[0][1]);
+      for(var i=1;i<c.pts.length;i++) ctx.lineTo(c.pts[i][0],c.pts[i][1]);
+      ctx.closePath(); ctx.fill();
+      if(c.ash){ ctx.fillStyle='rgba(185,180,172,0.2)'; ctx.beginPath(); ctx.ellipse(0,-c.h*0.2,c.w*0.32,c.h*0.18,0,0,6.29); ctx.fill(); }
+      ctx.globalCompositeOperation='lighter';
+      var cgw=0.4+0.3*Math.sin(t*3+c.heat);
+      ctx.strokeStyle='rgba(255,'+(110+cgw*80)+',40,'+(0.45+cgw*0.4)+')'; ctx.lineWidth=1.3;
+      ctx.beginPath(); ctx.moveTo(-c.w*0.2,c.h*0.1); ctx.lineTo(c.w*0.05,c.crack*c.h*0.2-2); ctx.lineTo(c.w*0.25,c.h*0.15); ctx.stroke();
+      ctx.fillStyle='rgba(255,90,30,'+(0.34+cgw*0.22)+')'; ctx.beginPath(); ctx.ellipse(0,c.h*0.45,c.w*0.42,c.h*0.17,0,0,6.29); ctx.fill();
+      ctx.globalCompositeOperation='source-over'; ctx.restore();
+    });
+
+    // 炎（控えめ）
+    ctx.globalCompositeOperation='lighter';
+    flames.forEach(function(f){
+      cFlameShape(f,t,1.1,[[0,'rgba(255,130,35,0)'],[0.3,'rgba(255,160,50,0.28)'],[0.8,'rgba(255,200,95,0.22)'],[1,'rgba(255,230,150,0.05)']],false);
+      cFlameShape(f,t,0.6,[[0,'rgba(255,200,110,0)'],[0.45,'rgba(255,235,180,0.4)'],[1,'rgba(255,250,220,0.18)']],true);
+    });
+    ctx.globalCompositeOperation='source-over';
+
+    // 陽炎
+    ctx.globalCompositeOperation='lighter';
+    for(var i=0;i<4;i++){ var hx=W*(0.18+i*0.22)+Math.sin(t*1.5+i)*10; var hg=ctx.createRadialGradient(hx,bedY-28,0,hx,bedY-28,45); hg.addColorStop(0,'rgba(255,150,60,0.04)'); hg.addColorStop(1,'rgba(255,150,60,0)'); ctx.fillStyle=hg; ctx.beginPath(); ctx.arc(hx,bedY-28,45,0,6.29); ctx.fill(); }
+    ctx.globalCompositeOperation='source-over';
+
+    // 煙
+    if(Math.random()<0.05) smokes.push({x:rnd(W*0.1,W*0.9), y:bedY-14, r:rnd(7,13), life:1, vx:rnd(-0.2,0.2)});
+    smokes.forEach(function(s){ s.y-=0.5; s.x+=s.vx; s.r+=0.22; s.life-=0.006; ctx.fillStyle='rgba(120,110,100,'+(Math.max(s.life,0)*0.1)+')'; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,6.29); ctx.fill(); });
+    smokes=smokes.filter(function(s){return s.life>0;});
+
+    // 火の粉
+    if(Math.random()<0.4){ var e=embers[Math.floor(Math.random()*embers.length)]; sparks.push({x:e.x+rnd(-6,6), y:e.y, vy:-rnd(0.6,1.3), vx:rnd(-0.4,0.4), life:1}); }
+    sparks.forEach(function(s){ s.x+=s.vx; s.y+=s.vy; s.vy*=0.99; s.life-=0.013; var a=Math.max(s.life,0); ctx.fillStyle='rgba(255,'+(175+Math.random()*55)+',75,'+a+')'; ctx.beginPath(); ctx.arc(s.x,s.y,1.2,0,6.29); ctx.fill(); });
+    sparks=sparks.filter(function(s){return s.life>0 && s.y>H*0.05;});
+
+    // 全体グロー
+    ctx.globalCompositeOperation='lighter';
+    var glow=ctx.createRadialGradient(W/2,bedY,0,W/2,bedY,W*0.55);
+    glow.addColorStop(0,'rgba(255,130,45,0.1)'); glow.addColorStop(1,'rgba(255,130,45,0)');
+    ctx.fillStyle=glow; ctx.fillRect(0,0,W,H); ctx.globalCompositeOperation='source-over';
+
+    rafId=requestAnimationFrame(charcoalFrame);
+  }
+
+  // 既存の startFlame() の代わりにこれを呼ぶ
+  function startCharcoal(){ if(!rafId){ charcoalResize(); charcoalFrame(); } }
+  window.addEventListener('resize', function(){ if(rafId) charcoalResize(); });
+
+  // 必要なら外から呼べるように公開
+  window.__startCharcoal = startCharcoal;
+})();
+
 </script>
 </body>
 </html>
