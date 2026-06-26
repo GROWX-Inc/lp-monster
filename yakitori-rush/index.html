@@ -49,7 +49,9 @@
 
     <div id="board" style="position:absolute;top:16%;left:0;right:0;bottom:6%;z-index:3;display:none;">
       <img id="grillImg" style="position:absolute;bottom:9%;left:4%;width:92%;z-index:2;" alt="">
-      <canvas id="flameCv" style="position:absolute;bottom:27%;left:12%;width:76%;height:11.5%;z-index:3;"></canvas>
+      <!-- 焼き台の重なり順: 背景 → 炭床(flameCv z-index:1) → 網(grillImg z-index:2) → 串・具材(skewerWrap z-index:4)。
+           炭床は網の天板の内側に収める。微調整: bottom/left/width/height(網の天板に合わせる)・z-index(網との前後)。 -->
+      <canvas id="flameCv" style="position:absolute;bottom:27%;left:14%;width:72%;height:10.8%;z-index:1;"></canvas>
       <div id="skewerWrap" style="position:absolute;top:14%;left:0;right:0;height:46%;z-index:4;">
         <img id="skewerImg" style="position:absolute;top:46.7%;left:50%;transform:translate(-50%,-50%);width:86%;z-index:1;" alt="">
         <div id="itemsLayer" style="position:absolute;inset:0;z-index:2;"></div>
