@@ -85,6 +85,15 @@
   /* sparkle */
   .spark{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--gold);z-index:35;pointer-events:none;
     box-shadow:0 0 8px var(--gold);}
+  /* タイトル・ルール画面 */
+  .scrim{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px 20px;gap:16px;color:#f3e3c6;z-index:60;}
+  .scrim.dim{background:rgba(18,11,7,0.70);}
+  .title-box{background:#e88aa8;border:2px solid #f9d4e0;border-radius:14px;padding:16px 18px;width:100%;max-width:280px;}
+  .title-box h2{font-size:21px;font-weight:700;color:#fff;line-height:1.4;text-shadow:0 1px 4px rgba(0,0,0,0.4);margin:0;}
+  .catch{font-size:13px;color:#fde8f0;line-height:1.7;max-width:270px;text-shadow:0 1px 3px #000;}
+  .guide-list{font-size:13px;color:#f3e3c6;line-height:1.9;max-width:270px;text-align:left;text-shadow:0 1px 3px #000;}
+  .scrim-btn{padding:13px 36px;border-radius:999px;border:none;background:#e0a93c;color:#3a230c;font-size:17px;font-weight:600;cursor:pointer;font-family:var(--font-sans);box-shadow:0 4px 0 #b06d1a;}
+  .scrim-btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b06d1a;}
 </style>
 </head>
 <body>
@@ -160,6 +169,27 @@
       </div>
       <div style="font-size:11px;color:#a8855a;max-width:280px;line-height:1.5;">ご利用時はこの画面をスタッフにご提示ください。お一人様1回限り。</div>
       <button id="rwbtn">もう一度あそぶ</button>
+    </div>
+
+    <!-- タイトル画面 -->
+    <div id="introScrim" class="scrim dim">
+      <div class="title-box">
+        <h2>メイプルシロップを<br>届けろ！</h2>
+      </div>
+      <div class="catch">設問に答えてレールをつなげ！<br>メープルを流してシロップ完成。</div>
+      <button class="scrim-btn" id="startBtn">はじめる</button>
+    </div>
+
+    <!-- あそびかた画面 -->
+    <div id="guideScrim" class="scrim dim" style="display:none;">
+      <div style="font-size:20px;font-weight:700;text-shadow:0 1px 3px #000;">あそびかた</div>
+      <div class="guide-list">
+        ① <b>設問に答える</b>と木のレールが出現<br>
+        ② つながる位置で<b>タップして止める</b><br>
+        ③ 5本つなぐと<b>メープルが流れて</b>シロップ完成<br>
+        ④ クーポンをGET🎉
+      </div>
+      <button class="scrim-btn" id="guideBtn">OK！</button>
     </div>
   </div>
 </div>
@@ -455,7 +485,17 @@
 
   // init
   drawGhost(0);paintDots();
-  setTimeout(showQuestion,400);
+  // タイトル→ルール→ゲーム開始フロー
+  var introScrim = document.getElementById('introScrim');
+  var guideScrim = document.getElementById('guideScrim');
+  document.getElementById('startBtn').addEventListener('click', function(){
+    introScrim.style.display = 'none';
+    guideScrim.style.display = 'flex';
+  });
+  document.getElementById('guideBtn').addEventListener('click', function(){
+    guideScrim.style.display = 'none';
+    showQuestion();
+  });
 })();
 </script>
 </body>
