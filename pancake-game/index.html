@@ -27,6 +27,7 @@
 <div style="max-width:380px;margin:0 auto;padding:0.5rem 0;">
   <div id="stage" style="position:relative;width:100%;aspect-ratio:758/1360;background:#241712;border-radius:var(--border-radius-lg);overflow:hidden;border:0.5px solid var(--color-border-tertiary);font-family:var(--font-sans);">
 
+    <!-- Step1: 背景 -->
     <img src="assets/bg.jpg" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;" alt="">
 
     <div id="hud" style="position:absolute;top:0;left:0;right:0;padding:9px 11px;display:flex;justify-content:space-between;align-items:center;z-index:5;">
@@ -35,21 +36,30 @@
     </div>
 
     <svg id="board" viewBox="0 0 758 1360" style="position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1;">
-      <defs><clipPath id="routeClip"><path id="routeFill" d="" /></clipPath></defs>
+      <!-- measurePath: getTotalLength()計測用（不可視） -->
+      <path id="measurePath" d="" fill="none" stroke="none"/>
+
+      <!-- ゴーストライン（未ロック区間のガイド） -->
       <g id="ghostLayer" stroke="#5b3d28" stroke-width="34" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 24" opacity="0.5"></g>
-      <g id="lockedLayer" stroke="#8a5a33" stroke-width="34" fill="none" stroke-linecap="round" stroke-linejoin="round"></g>
-      <g id="lockedBark" stroke="#6f4626" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"></g>
+
+      <!-- Step3: pipe.png を各セグメントに配置（drawLocked で動的生成） -->
+      <g id="lockedLayer"></g>
+      <g id="lockedBark"></g>
+
+      <!-- 動くパイプ（タイミングゲーム用スライダー、SVGストロークのまま） -->
       <g id="movingPiece" stroke="#b07840" stroke-width="34" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0"></g>
-      <g id="sapLayer" stroke="#e0a93c" stroke-width="16" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#routeClip)"></g>
-      <circle id="inlet" cx="110" cy="95" r="24" fill="#3a6db0"/>
+
+      <!-- Step1: 青丸→ jar.png（注ぎ口） x=62,y=35 でJarを cx=110,cy=95 中心に配置 -->
+      <image id="inlet" href="./assets/jar.png" x="62" y="35" width="96" height="120"/>
+
+      <!-- Step4: ビー玉（クリア演出時に転がる、初期は非表示） -->
+      <image id="marbleEl" href="./assets/marble.png" x="0" y="0" width="60" height="60" opacity="0"/>
+
+      <!-- Step2: pancake.png + syrup.png（targetGroup の楕円群を差し替え） -->
       <g id="targetGroup">
-        <ellipse id="t_shadow" rx="78" ry="16" fill="rgba(0,0,0,0.3)"/>
-        <ellipse id="t_p1" rx="74" ry="21" fill="#c79a5e"/>
-        <ellipse id="t_p2" rx="74" ry="21" fill="#e8c98e"/>
-        <ellipse id="t_p3" rx="66" ry="19" fill="#c79a5e"/>
-        <ellipse id="t_p4" rx="66" ry="19" fill="#edd29b"/>
-        <ellipse id="t_butter" rx="22" ry="11" fill="#f7e27a"/>
-        <path id="syrup" d="" fill="none" stroke="#a8541a" stroke-width="0" stroke-linecap="round"/>
+        <image id="pancakeImg" href="./assets/pancake.png" x="-100" y="-170" width="200" height="190"/>
+        <!-- syrup.png は到達後にフェードイン -->
+        <image id="syrupImg" href="./assets/syrup.png" x="-100" y="-190" width="200" height="210" opacity="0"/>
       </g>
     </svg>
 
@@ -70,7 +80,6 @@
     <div id="reward" style="position:absolute;inset:0;z-index:9;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#1c120b;padding:22px;text-align:center;">
       <div style="color:#f3e3c6;font-size:14px;letter-spacing:1px;">アンケート完了！</div>
       <div style="color:#f7e27a;font-size:22px;font-weight:500;">クーポンをGET<i class="ti ti-confetti" style="margin-left:6px;"></i></div>
-
       <div style="position:relative;width:88%;max-width:300px;background:#fbf3e2;border-radius:16px;padding:20px 18px;color:#3a230c;">
         <div style="position:absolute;top:50%;left:-9px;width:18px;height:18px;border-radius:50%;background:#1c120b;transform:translateY(-50%);"></div>
         <div style="position:absolute;top:50%;right:-9px;width:18px;height:18px;border-radius:50%;background:#1c120b;transform:translateY(-50%);"></div>
@@ -85,7 +94,6 @@
           <div style="font-size:11px;color:#a08a6a;text-align:right;">有効期限<br>本日より7日間</div>
         </div>
       </div>
-
       <div style="font-size:11px;color:#a08a6a;max-width:280px;line-height:1.5;">ご利用時はこの画面をスタッフにご提示ください。1人1回限り。</div>
       <button id="rwbtn" style="margin-top:2px;padding:11px 26px;border-radius:999px;border:none;background:#e0a93c;color:#3a230c;font-size:15px;font-weight:500;cursor:pointer;font-family:var(--font-sans);">最初から</button>
     </div>
@@ -94,128 +102,213 @@
 
 <script>
 (function(){
-  var locked=document.getElementById('lockedLayer'),lockedBark=document.getElementById('lockedBark'),
-      ghost=document.getElementById('ghostLayer'),moving=document.getElementById('movingPiece'),
-      sap=document.getElementById('sapLayer'),tapbtn=document.getElementById('tapbtn'),
-      qnow=document.getElementById('qnow'),overlay=document.getElementById('overlay'),
-      routeFill=document.getElementById('routeFill'),tg=document.getElementById('targetGroup'),
-      msg=document.getElementById('msg'),qcard=document.getElementById('qcard'),
-      qtext=document.getElementById('qtext'),qopts=document.getElementById('qopts'),
-      ovbtn=document.getElementById('ovbtn'),reward=document.getElementById('reward'),
-      hud=document.getElementById('hud');
+  var ghost    = document.getElementById('ghostLayer'),
+      locked   = document.getElementById('lockedLayer'),
+      moving   = document.getElementById('movingPiece'),
+      tapbtn   = document.getElementById('tapbtn'),
+      qnow     = document.getElementById('qnow'),
+      overlay  = document.getElementById('overlay'),
+      tg       = document.getElementById('targetGroup'),
+      msg      = document.getElementById('msg'),
+      qcard    = document.getElementById('qcard'),
+      qtext    = document.getElementById('qtext'),
+      qopts    = document.getElementById('qopts'),
+      ovbtn    = document.getElementById('ovbtn'),
+      reward   = document.getElementById('reward'),
+      hud      = document.getElementById('hud'),
+      marbleEl = document.getElementById('marbleEl'),
+      syrupImg = document.getElementById('syrupImg'),
+      measurePath = document.getElementById('measurePath');
 
-  var nodes=[[110,95],[110,300],[210,300],[210,540],[475,460],[620,720],[470,800],[150,820],[140,920]];
-  var segs=[];for(var i=0;i<nodes.length-1;i++){segs.push({x1:nodes[i][0],y1:nodes[i][1],x2:nodes[i+1][0],y2:nodes[i+1][1]});}
-  var TOTAL=Math.min(5,segs.length);
-  document.getElementById('qtot').textContent=TOTAL;
+  var nodes = [[110,95],[110,300],[210,300],[210,540],[475,460],[620,720],[470,800],[150,820],[140,920]];
+  var segs  = [];
+  for(var i=0;i<nodes.length-1;i++){
+    segs.push({x1:nodes[i][0],y1:nodes[i][1],x2:nodes[i+1][0],y2:nodes[i+1][1]});
+  }
+  var TOTAL = Math.min(5, segs.length);
+  document.getElementById('qtot').textContent = TOTAL;
 
-  var QUESTIONS=[
-    {q:'ご来店は何回目ですか？',a:['はじめて','2〜3回目','常連です']},
-    {q:'本日はどなたと？',a:['ひとり','友人・家族','仕事・打合せ']},
-    {q:'パンケーキの味はいかがでしたか？',a:['とても良い','良い','ふつう']},
-    {q:'店内の居心地はいかがでしたか？',a:['とても良い','良い','ふつう']},
-    {q:'また来たいと思いますか？',a:['ぜひ来たい','来たい','検討する']}
+  var QUESTIONS = [
+    {q:'ご来店は何回目ですか？',    a:['はじめて','2〜3回目','常連です']},
+    {q:'本日はどなたと？',          a:['ひとり','友人・家族','仕事・打合せ']},
+    {q:'パンケーキの味はいかがでしたか？', a:['とても良い','良い','ふつう']},
+    {q:'店内の居心地はいかがでしたか？',   a:['とても良い','良い','ふつう']},
+    {q:'また来たいと思いますか？',  a:['ぜひ来たい','来たい','検討する']}
   ];
 
-  var endP=nodes[TOTAL];
+  var endP = nodes[TOTAL];
   tg.setAttribute('transform','translate('+endP[0]+','+(endP[1]+30)+')');
-  (function(){function s(id,cy){var e=document.getElementById(id);e.setAttribute('cx',0);e.setAttribute('cy',cy);}
-    s('t_shadow',28);s('t_p1',14);s('t_p2',3);s('t_p3',-9);s('t_p4',-19);s('t_butter',-29);})();
 
-  function dpath(s){return 'M'+s.x1+' '+s.y1+' L'+s.x2+' '+s.y2;}
-  function routeUpTo(n){var d='';for(var i=0;i<n;i++)d+=dpath(segs[i])+' ';return d.trim();}
-  function drawLocked(n){var d=routeUpTo(n);locked.innerHTML=d?'<path d="'+d+'"/>':'';lockedBark.innerHTML=d?'<path d="'+d+'"/>':'';}
-  function drawGhost(n){var d='';for(var i=n;i<TOTAL;i++)d+=dpath(segs[i])+' ';ghost.innerHTML=d?'<path d="'+d.trim()+'"/>':'';}
+  /* ---------- パス・ルートユーティリティ ---------- */
+  function dpath(s){ return 'M'+s.x1+' '+s.y1+' L'+s.x2+' '+s.y2; }
+  function routeUpTo(n){ var d=''; for(var i=0;i<n;i++) d+=dpath(segs[i])+' '; return d.trim(); }
 
+  /* ---------- Step3: pipe.png を各セグメントに配置 ----------
+     各セグメントの中点・長さ・角度を計算し、pipe.png を回転・伸縮して敷く。
+     preserveAspectRatio="none" で横幅をセグメント長に合わせる。            */
+  var PIPE_H = 70;
+  function drawLocked(n){
+    var html = '';
+    for(var i=0;i<n;i++){
+      var s  = segs[i];
+      var dx = s.x2-s.x1, dy = s.y2-s.y1;
+      var len = Math.sqrt(dx*dx+dy*dy);
+      var ang = Math.atan2(dy,dx)*180/Math.PI;
+      var mx  = (s.x1+s.x2)/2, my = (s.y1+s.y2)/2;
+      html += '<image href="./assets/pipe.png"'
+            + ' x="'+(mx-len/2)+'" y="'+(my-PIPE_H/2)+'"'
+            + ' width="'+len+'" height="'+PIPE_H+'"'
+            + ' transform="rotate('+ang+','+mx+','+my+')"'
+            + ' preserveAspectRatio="none"/>';
+    }
+    locked.innerHTML = html;
+  }
+
+  function drawGhost(n){
+    var d = '';
+    for(var i=n;i<TOTAL;i++) d += dpath(segs[i])+' ';
+    ghost.innerHTML = d ? '<path d="'+d.trim()+'"/>' : '';
+  }
+
+  /* ---------- ゲーム変数 ---------- */
   var q=0, raf=null, running=false, seg, mpos, mdir, mspeed, amp=150, answered=[];
 
+  /* ---------- 質問カード ---------- */
   function showQuestion(){
-    var Q=QUESTIONS[q];
-    qtext.textContent='Q'+(q+1)+'. '+Q.q;
-    qopts.innerHTML='';
+    var Q = QUESTIONS[q];
+    qtext.textContent = 'Q'+(q+1)+'. '+Q.q;
+    qopts.innerHTML = '';
     Q.a.forEach(function(opt){
-      var b=document.createElement('button');
-      b.textContent=opt;
-      b.style.cssText='padding:10px 12px;border-radius:10px;border:0.5px solid rgba(243,227,198,0.3);background:rgba(243,227,198,0.06);color:#f3e3c6;font-size:14px;font-family:var(--font-sans);cursor:pointer;text-align:left;';
-      b.addEventListener('click',function(){answered[q]=opt;qcard.style.display='none';startSegment();});
+      var b = document.createElement('button');
+      b.textContent = opt;
+      b.style.cssText = 'padding:10px 12px;border-radius:10px;border:0.5px solid rgba(243,227,198,0.3);background:rgba(243,227,198,0.06);color:#f3e3c6;font-size:14px;font-family:var(--font-sans);cursor:pointer;text-align:left;';
+      b.addEventListener('click',function(){ answered[q]=opt; qcard.style.display='none'; startSegment(); });
       qopts.appendChild(b);
     });
-    qcard.style.display='block';tapbtn.style.display='none';msg.textContent='答えを選んでね';
+    qcard.style.display='block'; tapbtn.style.display='none'; msg.textContent='答えを選んでね';
   }
+
+  /* ---------- セグメント開始（スライダー） ---------- */
   function startSegment(){
-    seg=segs[q]; qnow.textContent=q+1;
+    seg = segs[q]; qnow.textContent = q+1;
     drawLocked(q); drawGhost(q+1);
-    moving.innerHTML='<path d="'+dpath(seg)+'"/>';
+    moving.innerHTML = '<path d="'+dpath(seg)+'"/>';
     mpos=amp; mdir=-1;
     moving.setAttribute('opacity','1'); moving.setAttribute('stroke','#b07840');
     apply(); mspeed=2.4+q*0.6; running=true;
-    tapbtn.style.display='block';msg.textContent='つながる位置で止める';
+    tapbtn.style.display='block'; msg.textContent='つながる位置で止める';
     cancelAnimationFrame(raf); loop();
   }
   function apply(){ moving.setAttribute('transform','translate('+mpos+',0)'); }
-  function loop(){mpos+=mdir*mspeed;if(mpos>=amp){mpos=amp;mdir=-1;}if(mpos<=-amp){mpos=-amp;mdir=1;}apply();raf=requestAnimationFrame(loop);}
-
-  function flowSap(n,done){
-    var d=routeUpTo(n);routeFill.setAttribute('d',d);
-    sap.innerHTML='<path d="'+d+'"/>';
-    var p=sap.querySelector('path');var len=p.getTotalLength?p.getTotalLength():600;
-    p.style.strokeDasharray=len;p.style.strokeDashoffset=len;
-    var t0=null;function a(ts){if(!t0)t0=ts;var k=Math.min((ts-t0)/300,1);p.style.strokeDashoffset=len*(1-k);if(k<1)requestAnimationFrame(a);else if(done)done();}
-    requestAnimationFrame(a);
+  function loop(){
+    mpos+=mdir*mspeed;
+    if(mpos>=amp){mpos=amp;mdir=-1;} if(mpos<=-amp){mpos=-amp;mdir=1;}
+    apply(); raf=requestAnimationFrame(loop);
   }
+
+  /* ---------- Step4: ビー玉アニメーション ----------
+     measurePath を使い全ルートの長さを取得してからビー玉を動かす。
+     到達後 pourSyrup() でシロップをフェードイン。                    */
+  function rollMarble(done){
+    var d = routeUpTo(TOTAL);
+    measurePath.setAttribute('d', d);
+    var totalLen = measurePath.getTotalLength ? measurePath.getTotalLength() : 800;
+    var mSize = 60, t0 = null, duration = 2200;
+    marbleEl.setAttribute('opacity','1');
+    function animate(ts){
+      if(!t0) t0=ts;
+      var k  = Math.min((ts-t0)/duration, 1);
+      var pt = measurePath.getPointAtLength(k*totalLen);
+      marbleEl.setAttribute('x', pt.x - mSize/2);
+      marbleEl.setAttribute('y', pt.y - mSize/2);
+      if(k<1){ requestAnimationFrame(animate); }
+      else   { marbleEl.setAttribute('opacity','0'); if(done) done(); }
+    }
+    requestAnimationFrame(animate);
+  }
+
+  /* ---------- Step4: syrup.png フェードイン ---------- */
   function pourSyrup(){
-    var s=document.getElementById('syrup');
-    s.setAttribute('d','M0 -32 C -7 -10 7 6 -14 24 C -28 38 24 42 10 56');
-    s.setAttribute('stroke-width','12');
-    var len=s.getTotalLength?s.getTotalLength():100;s.style.strokeDasharray=len;s.style.strokeDashoffset=len;
-    var t0=null;function a(ts){if(!t0)t0=ts;var k=Math.min((ts-t0)/650,1);s.style.strokeDashoffset=len*(1-k);if(k<1)requestAnimationFrame(a);}
+    var t0=null;
+    function a(ts){
+      if(!t0) t0=ts;
+      var k = Math.min((ts-t0)/700, 1);
+      syrupImg.setAttribute('opacity', k);
+      if(k<1) requestAnimationFrame(a);
+    }
     requestAnimationFrame(a);
   }
 
-  function win(){
-    running=false;cancelAnimationFrame(raf);moving.setAttribute('opacity','0');ghost.innerHTML='';tapbtn.style.display='none';
-    flowSap(TOTAL,function(){pourSyrup();setTimeout(function(){
-      document.getElementById('ovicon').innerHTML='<i class="ti ti-check"></i>';
-      document.getElementById('ovtitle').textContent='シロップ完成！';
-      document.getElementById('ovsub').textContent='ご回答ありがとうございました。リワードを受け取りましょう。';
-      ovbtn.textContent='クーポンを受け取る';ovbtn._mode='reward';
-      overlay.style.display='flex';},900);});
+  /* ---------- flowSap: 中間はパイプ再描画のみ、最終はビー玉演出 ---------- */
+  function flowSap(n, done){
+    drawLocked(n);
+    if(!done) return;
+    rollMarble(function(){
+      pourSyrup();
+      done();
+    });
   }
+
+  /* ---------- クリア ---------- */
+  function win(){
+    running=false; cancelAnimationFrame(raf);
+    moving.setAttribute('opacity','0'); ghost.innerHTML=''; tapbtn.style.display='none';
+    flowSap(TOTAL, function(){
+      setTimeout(function(){
+        document.getElementById('ovicon').innerHTML  = '<i class="ti ti-check"></i>';
+        document.getElementById('ovtitle').textContent = 'シロップ完成！';
+        document.getElementById('ovsub').textContent   = 'ご回答ありがとうございました。リワードを受け取りましょう。';
+        ovbtn.textContent = 'クーポンを受け取る'; ovbtn._mode='reward';
+        overlay.style.display='flex';
+      }, 900);
+    });
+  }
+
+  /* ---------- ミス ---------- */
   function lose(){
-    running=false;cancelAnimationFrame(raf);tapbtn.style.display='none';
-    document.getElementById('ovicon').innerHTML='<i class="ti ti-refresh"></i>';
-    document.getElementById('ovtitle').textContent='おしい！';
-    document.getElementById('ovsub').textContent='この幹からもう一度。答えた質問はそのままでOKです。';
-    ovbtn.textContent='ここから再開';ovbtn._mode='retry';
+    running=false; cancelAnimationFrame(raf); tapbtn.style.display='none';
+    document.getElementById('ovicon').innerHTML  = '<i class="ti ti-refresh"></i>';
+    document.getElementById('ovtitle').textContent = 'おしい！';
+    document.getElementById('ovsub').textContent   = 'この幹からもう一度。答えた質問はそのままでOKです。';
+    ovbtn.textContent='ここから再開'; ovbtn._mode='retry';
     overlay.style.display='flex';
   }
+
+  /* ---------- タップ判定 ---------- */
   function tap(){
-    if(!running)return;
-    var hit=Math.abs(mpos)<=26;
+    if(!running) return;
+    var hit = Math.abs(mpos)<=26;
     if(hit){
-      running=false;cancelAnimationFrame(raf);mpos=0;apply();moving.setAttribute('stroke','#7ee08a');
-      q++;flowSap(q);
-      if(q>=TOTAL){setTimeout(win,360);}
-      else{setTimeout(function(){moving.setAttribute('opacity','0');showQuestion();},420);}
-    } else { moving.setAttribute('stroke','#e26b6b');setTimeout(lose,180); }
+      running=false; cancelAnimationFrame(raf); mpos=0; apply();
+      moving.setAttribute('stroke','#7ee08a');
+      q++; flowSap(q);
+      if(q>=TOTAL){ setTimeout(win,360); }
+      else{ setTimeout(function(){ moving.setAttribute('opacity','0'); showQuestion(); }, 420); }
+    } else {
+      moving.setAttribute('stroke','#e26b6b'); setTimeout(lose,180);
+    }
   }
 
+  /* ---------- リセット ---------- */
   function resetAll(){
-    locked.innerHTML='';lockedBark.innerHTML='';sap.innerHTML='';
-    document.getElementById('syrup').setAttribute('stroke-width','0');
-    q=0;answered=[];
+    locked.innerHTML='';
+    marbleEl.setAttribute('opacity','0');
+    syrupImg.setAttribute('opacity','0');
+    q=0; answered=[];
   }
 
-  tapbtn.addEventListener('click',tap);
-  ovbtn.addEventListener('click',function(){
+  /* ---------- イベント ---------- */
+  tapbtn.addEventListener('click', tap);
+  ovbtn.addEventListener('click', function(){
     overlay.style.display='none';
     if(ovbtn._mode==='reward'){ hud.style.display='none'; reward.style.display='flex'; }
     else if(ovbtn._mode==='retry'){ startSegment(); }
   });
-  document.getElementById('rwbtn').addEventListener('click',function(){
-    reward.style.display='none';hud.style.display='flex';resetAll();showQuestion();
+  document.getElementById('rwbtn').addEventListener('click', function(){
+    reward.style.display='none'; hud.style.display='flex'; resetAll(); showQuestion();
   });
-  setTimeout(showQuestion,300);
+
+  setTimeout(showQuestion, 300);
 })();
 </script>
 </body>
