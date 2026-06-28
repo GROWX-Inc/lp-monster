@@ -1,0 +1,78 @@
+{
+  "brand": {
+    "name": "ホテル・コスモ（デモ）",
+    "logoUrl": "",
+    "mainColor": "#5a3fd6",
+    "accentColor": "#ff5fa2"
+  },
+  "mode": "runner",
+  "title": {
+    "heading": "アンケートギャラクシー",
+    "subheading": "銀河の彼方へひとっ飛び！？滞在アンケートに答えてクーポンをGET！",
+    "startLabel": "うちゅうへ とびだす"
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single",
+      "text": "今回のご利用は はじめてですか？",
+      "options": ["はじめて", "2回目以上"],
+      "event": "enemy"
+    },
+    {
+      "id": "q2",
+      "type": "single",
+      "text": "今回のご利用目的に一番近いのは？",
+      "options": ["出張・ビジネス", "観光・レジャー", "記念日・特別な日", "その他"],
+      "event": "enemy"
+    },
+    {
+      "id": "q3",
+      "type": "single",
+      "text": "お部屋の快適さはいかがでしたか？",
+      "options": ["満足！", "いまいち…"],
+      "event": "enemy"
+    },
+    {
+      "id": "q4",
+      "type": "multi",
+      "text": "良かったところを全部教えてください（複数選べます）",
+      "options": ["客室", "接客", "清潔さ", "立地"],
+      "event": "enemy"
+    },
+    {
+      "id": "q5",
+      "type": "single",
+      "text": "また泊まりたいと思いますか？",
+      "options": ["ぜひ泊まりたい！", "機会があれば"],
+      "event": "enemy"
+    },
+    {
+      "id": "q6",
+      "type": "text",
+      "text": "最後はボスUFO！ご意見・ご要望を書いて、とどめの一撃を！",
+      "event": "boss"
+    }
+  ],
+  "clear": {
+    "message": "アンケートへのご協力ありがとうございました！クリア特典をどうぞ！（デモ用の仮特典です）",
+    "coupon": {
+      "title": "ウェルカムドリンク1杯無料",
+      "note": "フロントにて この画面をお見せください",
+      "code": "COSMO-2026"
+    },
+    "ctaLabel": "クーポンの つかいかたを 見る",
+    "ctaUrl": "https://example.com/coupon-hotel"
+  },
+  "submit": {
+    "googleFormAction": "https://docs.google.com/forms/d/e/PLACEHOLDER/formResponse",
+    "fieldMap": {
+      "q1": "entry.1111111111",
+      "q2": "entry.2222222222",
+      "q3": "entry.3333333333",
+      "q4": "entry.4444444444",
+      "q5": "entry.5555555555",
+      "q6": "entry.6666666666"
+    }
+  }
+}
