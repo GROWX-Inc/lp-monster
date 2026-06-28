@@ -107,6 +107,35 @@
     return v || fallback;
   }
 
+  /* runner専用イントロのCSS(1回だけ<style>注入)。rn- 接頭辞でスコープし共有CSSに触れない */
+  function injectIntroStyle() {
+    if (document.getElementById('rn-intro-style')) return;
+    var css =
+      '.rn-intro{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+      'text-align:center;padding:28px 20px;background:#0c0a1e center/cover no-repeat;color:#fff;overflow:hidden;' +
+      'font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;}' +
+      '.rn-intro .rn-dim{position:absolute;inset:0;background:radial-gradient(circle at 50% 38%,rgba(26,12,60,.42),rgba(8,6,24,.8));}' +
+      '.rn-screen{position:relative;z-index:1;width:100%;max-width:330px;display:flex;flex-direction:column;align-items:center;gap:16px;}' +
+      '.rn-hidden{display:none!important;}' +
+      '.rn-brand{font-size:12px;letter-spacing:1px;color:#cfc4ff;text-shadow:0 1px 3px #000;}' +
+      '.rn-frame{width:100%;padding:18px 16px;border-radius:16px;border:2px solid var(--accent,#ff5fa2);' +
+      'background:linear-gradient(135deg,rgba(90,63,214,.92),rgba(255,95,162,.6));' +
+      'box-shadow:0 0 26px rgba(124,77,255,.55),inset 0 0 16px rgba(255,255,255,.14);}' +
+      '.rn-name{font-size:25px;font-weight:800;letter-spacing:1px;line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.55);' +
+      'word-break:keep-all;overflow-wrap:anywhere;}' +
+      '.rn-copy{margin:0;font-size:14px;line-height:1.7;color:#ece8ff;text-shadow:0 1px 4px rgba(0,0,0,.8);}' +
+      '.rn-howto-h{font-size:22px;font-weight:800;text-shadow:0 2px 8px rgba(0,0,0,.6);}' +
+      '.rn-list{list-style:none;margin:0;padding:0;width:100%;display:flex;flex-direction:column;gap:10px;text-align:left;}' +
+      '.rn-list li{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.45;' +
+      'background:rgba(22,14,48,.6);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:10px 12px;' +
+      'text-shadow:0 1px 2px rgba(0,0,0,.5);}' +
+      '.rn-num{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:var(--accent,#ff5fa2);color:#fff;' +
+      'font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(255,95,162,.6);}' +
+      '.rn-intro .btn-big{max-width:320px;}';
+    var s = document.createElement('style'); s.id = 'rn-intro-style'; s.textContent = css;
+    document.head.appendChild(s);
+  }
+
   function Runner(config) {
     this.config = config;
     this.idx = 0;            // いま何問目か
@@ -169,7 +198,54 @@
       self.sprites[nm] = im;
     });
     this.buildHud();
-    window.AIM_CORE.buildTitle(this.config, function () { self.enterGame(); });
+    // runner専用のタイトル/あそびかた画面(engine.jsのbuildTitleは使わない=他モードに影響させない)
+    this.buildIntro();
+  };
+
+  /* ---------- runner専用 イントロ(タイトル→あそびかた)。
+     CSSはruner.jsから<style>注入し、DOMも自前生成。engine.js/style.css/questモードに影響しない ---------- */
+
+  Runner.prototype.buildIntro = function () {
+    var self = this, t = this.config.title || {}, b = this.config.brand || {};
+    $('#screen-title').hidden = true; // engineの素のタイトル枠は使わない
+    injectIntroStyle();
+
+    var root = document.createElement('div');
+    root.className = 'rn-intro';
+    root.style.backgroundImage = "url('" + BG_SRC + "')";
+    var dim = document.createElement('div'); dim.className = 'rn-dim'; root.appendChild(dim);
+
+    /* 画面1:タイトル */
+    var title = document.createElement('div'); title.className = 'rn-screen';
+    if (b.name) { var brand = document.createElement('div'); brand.className = 'rn-brand'; brand.textContent = b.name; title.appendChild(brand); }
+    var frame = document.createElement('div'); frame.className = 'rn-frame';
+    var name = document.createElement('div'); name.className = 'rn-name'; name.textContent = t.heading || 'アンケートギャラクシー'; frame.appendChild(name);
+    title.appendChild(frame);
+    var copy = document.createElement('p'); copy.className = 'rn-copy'; copy.textContent = t.subheading || ''; title.appendChild(copy);
+    var startBtn = document.createElement('button'); startBtn.className = 'btn-big'; startBtn.textContent = t.startLabel || 'スタート'; title.appendChild(startBtn);
+    root.appendChild(title);
+
+    /* 画面2:あそびかた */
+    var howto = document.createElement('div'); howto.className = 'rn-screen rn-hidden';
+    var h = document.createElement('div'); h.className = 'rn-howto-h'; h.textContent = 'あそびかた'; howto.appendChild(h);
+    var ul = document.createElement('ul'); ul.className = 'rn-list';
+    ['ドラッグで左右に移動',
+     'ゲートにぶつかって敵をたおす',
+     'アイテムを取ると仲間が増えてパワーアップ',
+     '設問に答えてクリア、クーポンGET'].forEach(function (txt, i) {
+      var li = document.createElement('li');
+      var num = document.createElement('span'); num.className = 'rn-num'; num.textContent = (i + 1); li.appendChild(num);
+      var sp = document.createElement('span'); sp.textContent = txt; li.appendChild(sp);
+      ul.appendChild(li);
+    });
+    howto.appendChild(ul);
+    var okBtn = document.createElement('button'); okBtn.className = 'btn-big'; okBtn.textContent = 'OK！'; howto.appendChild(okBtn);
+    root.appendChild(howto);
+
+    $('#app').appendChild(root);
+
+    startBtn.addEventListener('click', function () { title.className = 'rn-screen rn-hidden'; howto.className = 'rn-screen'; });
+    okBtn.addEventListener('click', function () { if (root.parentNode) root.parentNode.removeChild(root); self.enterGame(); });
   };
 
   Runner.prototype.buildHud = function () {
