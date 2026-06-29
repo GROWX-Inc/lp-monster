@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI MONSTER｜ゲームLP一覧</title>
+
+  <!--
+    AI MONSTER 営業用「ゲームLP一覧（入口）」LP
+    - 単一HTMLで自己完結（外部CSS/JSへの依存なし）。スマホ縦持ち前提（375px基準）。
+    - 3ゲームのタイトル画面サムネは未用意のため <img> プレースホルダ（data-game 付き）を配置。
+      画像ファイル（thumb-yakitori.jpg / thumb-runner.jpg / thumb-pancake.jpg）を
+      この showcase/ ディレクトリに置けば、グレー枠が自動で本物のサムネに差し替わる。
+    - ※ iOS Safari 実機での表示は要確認（本環境では実機未検証）。
+  -->
+
+  <style>
+    :root {
+      --ink:    #2b2b2b;          /* 本文の色 */
+      --main:   #3a3a44;          /* 見出しの色 */
+      --accent: #ff5a3c;          /* アクセント（CTA・強調） */
+      --accent-soft: #fff1ed;     /* アクセントの淡い背景 */
+      --muted:  #6b6b72;          /* 補足テキスト */
+      --line:   #e7e4dd;          /* 区切り線 */
+      --bg:     #f0eee8;          /* ページ背景 */
+      --card:   #ffffff;          /* カード背景 */
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { touch-action: manipulation; }
+
+    body {
+      font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.7;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    /* スマホ縦画面（375px）基準。PCでは中央に1カラムで寄せるだけ */
+    .wrap {
+      max-width: 480px;
+      margin: 0 auto;
+      background: var(--card);
+      min-height: 100dvh;
+      box-shadow: 0 0 24px rgba(0, 0, 0, .12);
+      overflow: hidden;
+    }
+
+    section { padding: 36px 20px; }
+
+    .eyebrow {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: .12em;
+      color: var(--accent);
+      background: var(--accent-soft);
+      padding: 5px 12px;
+      border-radius: 999px;
+    }
+
+    .section-title {
+      font-size: 21px;
+      font-weight: bold;
+      color: var(--main);
+      line-height: 1.4;
+      margin: 14px 0 6px;
+    }
+
+    .section-lead {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 22px;
+    }
+
+    /* ---------- ① ヒーロー ---------- */
+    .hero {
+      background:
+        radial-gradient(120% 80% at 50% 0%, #ffe9e3 0%, rgba(255,233,227,0) 60%),
+        linear-gradient(180deg, #fbfaf7 0%, #ffffff 100%);
+      text-align: center;
+      padding-top: 44px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 26px;
+    }
+    .brand .mark {
+      width: 38px; height: 38px;
+      border-radius: 11px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 22px;
+      line-height: 38px;
+      text-align: center;
+      box-shadow: 0 4px 0 rgba(0,0,0,.12);
+    }
+    .brand .name {
+      font-size: 19px;
+      font-weight: bold;
+      letter-spacing: .08em;
+      color: var(--main);
+    }
+
+    .hero h1 {
+      font-size: 27px;
+      font-weight: bold;
+      color: var(--main);
+      line-height: 1.45;
+      margin-bottom: 16px;
+    }
+    .hero h1 .q { color: var(--accent); }
+
+    .hero p {
+      font-size: 15px;
+      color: var(--muted);
+      max-width: 22em;
+      margin: 0 auto;
+    }
+
+    /* ---------- ② 強み3点 ---------- */
+    .merits { display: flex; flex-direction: column; gap: 12px; }
+    .merit {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .merit .ic {
+      flex: 0 0 auto;
+      width: 46px; height: 46px;
+      border-radius: 12px;
+      background: var(--accent-soft);
+      font-size: 24px;
+      line-height: 46px;
+      text-align: center;
+    }
+    .merit h3 {
+      font-size: 16px;
+      color: var(--main);
+      margin-bottom: 3px;
+    }
+    .merit p { font-size: 13.5px; color: var(--muted); }
+
+    /* ---------- ③ 仕組み（4ステップ） ---------- */
+    .how { background: #faf9f6; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .steps {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 4px;
+    }
+    .step {
+      flex: 1 1 0;
+      text-align: center;
+    }
+    .step .num {
+      width: 30px; height: 30px;
+      margin: 0 auto 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: bold;
+      line-height: 30px;
+    }
+    .step .ec { font-size: 26px; line-height: 1.1; }
+    .step .lb {
+      font-size: 12px;
+      font-weight: bold;
+      color: var(--main);
+      margin-top: 6px;
+      word-break: keep-all;
+    }
+    .step .arrow {
+      align-self: center;
+      color: var(--accent);
+      font-size: 18px;
+      flex: 0 0 auto;
+      padding-top: 22px;
+    }
+    /* 矢印は flex の独立アイテムとして steps に直接置く */
+    .steps-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 2px;
+    }
+
+    /* ---------- ④ ゲームを体験 ---------- */
+    .games { display: flex; flex-direction: column; gap: 18px; }
+    .game-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--card);
+      box-shadow: 0 6px 18px rgba(0,0,0,.05);
+    }
+
+    /* サムネ枠：画像未配置の間はグレー枠にゲーム名を表示。
+       画像が読み込めた場合は <img> がこの枠を覆う。 */
+    .thumb {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      background: #e9e7e1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .thumb::after {
+      content: attr(data-label);
+      color: #9a978f;
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: .04em;
+      padding: 0 16px;
+      text-align: center;
+    }
+    .thumb img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .game-body { padding: 16px; }
+    .tag {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: bold;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-radius: 999px;
+      padding: 4px 11px;
+      margin-bottom: 9px;
+    }
+    .game-body h3 {
+      font-size: 18px;
+      color: var(--main);
+      margin-bottom: 14px;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 13px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      text-decoration: none;
+      box-shadow: 0 4px 0 rgba(0,0,0,.14);
+    }
+    .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,.14); }
+    .btn .chev { margin-left: 6px; }
+
+    /* ---------- ⑤ フッター ---------- */
+    footer {
+      background: #2b2b30;
+      color: #cfcdc7;
+      text-align: center;
+      padding: 30px 20px 36px;
+    }
+    footer .f-brand {
+      font-size: 17px;
+      font-weight: bold;
+      letter-spacing: .08em;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+    footer .f-sub { font-size: 12.5px; color: #a8a6a0; margin-bottom: 16px; }
+    footer .f-contact { font-size: 13px; line-height: 1.9; }
+    footer .f-contact a { color: #ffb3a4; text-decoration: none; font-weight: bold; }
+    footer .f-copy { font-size: 11px; color: #7e7c77; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- ① ヒーロー -->
+    <section class="hero">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">👾</span>
+        <span class="name">AI MONSTER</span>
+      </div>
+      <h1><span class="q">&ldquo;なんだこれ？&rdquo;</span> が、<br>お客様の声になる。</h1>
+      <p>待ち時間に思わず触ってしまうミニゲーム。QRひとつ・説明いらず・数十秒で、アンケート回答とクチコミが自然に集まります。</p>
+    </section>
+
+    <!-- ② 強み3点 -->
+    <section>
+      <span class="eyebrow">STRENGTHS</span>
+      <h2 class="section-title">選ばれる3つの理由</h2>
+      <p class="section-lead">「参加させる」までのハードルを、限界まで下げました。</p>
+
+      <div class="merits">
+        <div class="merit">
+          <span class="ic" aria-hidden="true">📲</span>
+          <div>
+            <h3>インストール不要</h3>
+            <p>QRを読むだけ。アプリも会員登録もいりません。</p>
+          </div>
+        </div>
+        <div class="merit">
+          <span class="ic" aria-hidden="true">👆</span>
+          <div>
+            <h3>説明いらずで直感操作</h3>
+            <p>画面をタップするだけ。数十秒で完了します。</p>
+          </div>
+        </div>
+        <div class="merit">
+          <span class="ic" aria-hidden="true">🎯</span>
+          <div>
+            <h3>思わず触りたくなる軽さ</h3>
+            <p>「なんだこれ？」とツッコミながら、つい遊んでしまう。その勢いのまま、お客様の声が集まります。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ③ 仕組み（4ステップ） -->
+    <section class="how">
+      <span class="eyebrow">HOW IT WORKS</span>
+      <h2 class="section-title">かんたん4ステップ</h2>
+      <p class="section-lead">お客様の操作は、たったこれだけ。</p>
+
+      <div class="steps-row">
+        <div class="step">
+          <div class="num">1</div>
+          <div class="ec" aria-hidden="true">📱</div>
+          <div class="lb">QRを読む</div>
+        </div>
+        <div class="arrow" aria-hidden="true">›</div>
+        <div class="step">
+          <div class="num">2</div>
+          <div class="ec" aria-hidden="true">🎮</div>
+          <div class="lb">遊ぶ</div>
+        </div>
+        <div class="arrow" aria-hidden="true">›</div>
+        <div class="step">
+          <div class="num">3</div>
+          <div class="ec" aria-hidden="true">📝</div>
+          <div class="lb">答える</div>
+        </div>
+        <div class="arrow" aria-hidden="true">›</div>
+        <div class="step">
+          <div class="num">4</div>
+          <div class="ec" aria-hidden="true">🎁</div>
+          <div class="lb">クーポンGET</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ④ ゲームを体験（このLPの本体） -->
+    <section>
+      <span class="eyebrow">TRY IT NOW</span>
+      <h2 class="section-title">3つの世界で体験</h2>
+      <p class="section-lead">気になるカードから、その場で遊んでみてください。</p>
+
+      <div class="games">
+
+        <!-- やきとり職人ラッシュ -->
+        <article class="game-card">
+          <div class="thumb" data-label="やきとり職人ラッシュ">
+            <img src="thumb-yakitori.jpg" alt="やきとり職人ラッシュ タイトル画面"
+                 data-game="yakitori" loading="lazy"
+                 onerror="this.style.display='none'">
+          </div>
+          <div class="game-body">
+            <span class="tag">飲食・居酒屋</span>
+            <h3>やきとり職人ラッシュ</h3>
+            <a class="btn" href="https://growx-inc.github.io/lp-monster/yakitori-rush/"
+               target="_blank" rel="noopener">体験する<span class="chev" aria-hidden="true">›</span></a>
+          </div>
+        </article>
+
+        <!-- アンケートギャラクシー -->
+        <article class="game-card">
+          <div class="thumb" data-label="アンケートギャラクシー">
+            <img src="thumb-runner.jpg" alt="アンケートギャラクシー タイトル画面"
+                 data-game="runner" loading="lazy"
+                 onerror="this.style.display='none'">
+          </div>
+          <div class="game-body">
+            <span class="tag">ホテル・宿泊</span>
+            <h3>アンケートギャラクシー</h3>
+            <a class="btn" href="https://growx-inc.github.io/lp-monster/?config=hotel-runner"
+               target="_blank" rel="noopener">体験する<span class="chev" aria-hidden="true">›</span></a>
+          </div>
+        </article>
+
+        <!-- パンケーキ -->
+        <article class="game-card">
+          <div class="thumb" data-label="パンケーキ">
+            <img src="thumb-pancake.jpg" alt="パンケーキ タイトル画面"
+                 data-game="pancake" loading="lazy"
+                 onerror="this.style.display='none'">
+          </div>
+          <div class="game-body">
+            <span class="tag">カフェ・スイーツ</span>
+            <h3>パンケーキ</h3>
+            <a class="btn" href="https://growx-inc.github.io/lp-monster/pancake-game/"
+               target="_blank" rel="noopener">体験する<span class="chev" aria-hidden="true">›</span></a>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ⑤ フッター -->
+    <footer>
+      <div class="f-brand">AI MONSTER</div>
+      <div class="f-sub">ゲーム化アンケート LP テンプレート</div>
+      <div class="f-contact">
+        提供：GROWX Inc.<br>
+        お問い合わせ：<a href="mailto:g.yamaguchi@growx.co.jp">g.yamaguchi@growx.co.jp</a>
+      </div>
+      <div class="f-copy">© GROWX Inc. AI MONSTER</div>
+    </footer>
+
+  </div>
+</body>
+</html>
