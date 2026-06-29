@@ -8,9 +8,9 @@
   <!--
     AI MONSTER 営業用「ゲームLP一覧（入口）」LP
     - 単一HTMLで自己完結（外部CSS/JSへの依存なし）。スマホ縦持ち前提（375px基準）。
-    - 3ゲームのタイトル画面サムネは未用意のため <img> プレースホルダ（data-game 付き）を配置。
-      画像ファイル（thumb-yakitori.jpg / thumb-runner.jpg / thumb-pancake.jpg）を
-      この showcase/ ディレクトリに置けば、グレー枠が自動で本物のサムネに差し替わる。
+    - 3ゲームのタイトル画面サムネ（thumb-yakitori.jpg / thumb-runner.jpg / thumb-pancake.jpg）を
+      この showcase/ ディレクトリに同梱。各カードの <img>（data-game 付き）が表示する。
+      万一画像が読み込めない場合は onerror で <img> を隠し、グレー枠にゲーム名を表示するフォールバック付き。
     - ※ iOS Safari 実機での表示は要確認（本環境では実機未検証）。
   -->
 
@@ -379,7 +379,7 @@
         <article class="game-card">
           <div class="thumb" data-label="やきとり職人ラッシュ">
             <img src="thumb-yakitori.jpg" alt="やきとり職人ラッシュ タイトル画面"
-                 data-game="yakitori" loading="lazy"
+                 data-game="yakitori"
                  onerror="this.style.display='none'">
           </div>
           <div class="game-body">
@@ -394,7 +394,7 @@
         <article class="game-card">
           <div class="thumb" data-label="アンケートギャラクシー">
             <img src="thumb-runner.jpg" alt="アンケートギャラクシー タイトル画面"
-                 data-game="runner" loading="lazy"
+                 data-game="runner"
                  onerror="this.style.display='none'">
           </div>
           <div class="game-body">
@@ -409,7 +409,7 @@
         <article class="game-card">
           <div class="thumb" data-label="パンケーキ">
             <img src="thumb-pancake.jpg" alt="パンケーキ タイトル画面"
-                 data-game="pancake" loading="lazy"
+                 data-game="pancake"
                  onerror="this.style.display='none'">
           </div>
           <div class="game-body">
